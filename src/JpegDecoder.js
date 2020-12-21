@@ -889,10 +889,7 @@ export class JpegDecoder {
                                         mcuWidth * ((m / (maxNumUnitH / numUnitH)) | 0) +
                                         m % (maxNumUnitH / numUnitH)
                                     );
-                                if (componentId != 3)
-                                    mcuPixels[elementIndex] = 0;
-                                else
-                                    mcuPixels[elementIndex] = value;
+                                mcuPixels[elementIndex] = value;
                             }
                         }
                     }
