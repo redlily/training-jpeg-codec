@@ -3,9 +3,9 @@ export function convertRgbToYcbcr(dst, dstOff, src, srcOff, stride = 3, count = 
     let r = src[srcOff + 0];
     let g = src[srcOff + 1];
     let b = src[srcOff + 2];
-    dst[dstOff + 0] = 0 + 0.299 * r + 0.587 * g + 0.114 * b; // Y
-    dst[dstOff + 1] = 128 - 0.1687 * r - 0.3313 * g + 0.5 * b; // Cb
-    dst[dstOff + 2] = 128 + 0.5 * r - 0.4187 * g - 0.0813 * b; // Cr
+    dst[dstOff + 0] = 0.299 * r + 0.587 * g + 0.114 * b; // Y
+    dst[dstOff + 1] = -0.1687 * r - 0.3313 * g + 0.5 * b + 128; // Cb
+    dst[dstOff + 2] = 0.5 * r - 0.4187 * g - 0.0813 * b + 128; // Cr
 }
 
 /** YCbCrをRGBに変換する */

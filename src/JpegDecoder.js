@@ -4,12 +4,12 @@ import * as Stream from "./JpegDataStream.js";
 import * as Codec from "./JpegCodec.js";
 
 // デバッグ用のフラグ
-const isDebuggingSOF = false;
-const isDebuggingSOS = false;
+const isDebuggingSOF = true;
+const isDebuggingSOS = true;
 const isDebuggingSOSDetail = false;
-const isDebuggingDQT = false;
-const isDebuggingDAC = false;
-const isDebuggingDHT = false;
+const isDebuggingDQT = true;
+const isDebuggingDAC = true;
+const isDebuggingDHT = true;
 const isDebuggingDHTDetail = false;
 const isDebuggingDRI = true;
 const isDebuggingCOM = true;
@@ -890,6 +890,10 @@ export class JpegDecoder {
                                         m % (maxNumUnitH / numUnitH)
                                     );
                                 mcuPixels[elementIndex] = value;
+                                // if (componentId == 3) {
+                                // } else {
+                                //     mcuPixels[elementIndex] = 0;
+                                // }
                             }
                         }
                     }
