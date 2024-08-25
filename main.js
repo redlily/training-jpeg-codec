@@ -2,6 +2,7 @@
 import * as Decoder from "./src/JpegDecoder.js"
 
 let uploadFile;
+let previousCanvas = null;
 
 onload = () => {
     uploadFile = document.getElementById("uploadFile");
@@ -18,6 +19,7 @@ function onUploadImage(event) {
     image.src = URL.createObjectURL(file);
 
     let fileReader = new FileReader();
+
     fileReader.onload = (event) => {
         let decoder = new Decoder.JpegDecoder(fileReader.result);
         decoder.decode((type, out) => {
@@ -25,6 +27,7 @@ function onUploadImage(event) {
                 let canvas = document.createElement("canvas");
                 canvas.width = out.width;
                 canvas.height = out.height;
+                canvas.style.width = '100%'
 
                 let context = canvas.getContext("2d");
                 let imageData = context.createImageData(out.width, out.height);
@@ -35,7 +38,11 @@ function onUploadImage(event) {
                     imageData.data[4 * i + 3] = 255;
                 }
                 context.putImageData(imageData, 0, 0);
+                if (previousCanvas != null) {
+                    previousCanvas.remove();
+                }
                 document.body.append(canvas);
+                previousCanvas = canvas;
             }
         });
     }

@@ -3,6 +3,7 @@
  */
 class JpegDataStreamError extends Error {
 
+    /** コンストラクタ */
     constructor(message) {
         super(message);
     }
@@ -12,16 +13,17 @@ class JpegDataStreamError extends Error {
  * 書き込み用のデータストリームクラス
  */
 export class JpegWriteStream {
-
+    // TODO
 }
 
 /**
- * 読み込み用のデータストリームクラス
+ * JPEGのデータ読み込み用のデータストリームクラス
  */
 export class JpegReadStream {
 
-    constructor(buffer, offset) {
-        this._view = new DataView(buffer);
+    /** コンストラクタ */
+    constructor(buffer, offset = 0) {
+        this._view = new DataView(buffer, offset);
         this._off = 0;
         this._remainBits = 0;
         this._remainBitsCount = 0;
@@ -37,12 +39,12 @@ export class JpegReadStream {
         this._off = position;
     }
 
-    /** 保存しているビット配列を取得する */
+    /** 内部に保存している未出力のビット配列を取得する */
     get remainBits() {
         return this._remainBits;
     }
 
-    /** 保存しているビット配列のビット数を取得する */
+    /** 内部に保存している未出力のビット配列のビット数を取得する */
     get remainBitsCount() {
         return this._remainBitsCount;
     }
@@ -129,7 +131,7 @@ export class JpegReadStream {
         return result;
     }
 
-    /** ビット配列のステータスをリセットする */
+    /** 内部の未出力のビット配列のステータスをリセットする */
     resetRemainBits() {
         this._remainBits = 0;
         this._remainBitsCount = 0;

@@ -1,7 +1,7 @@
 /**
- * JPEGのエンコーダ・デコーダ用の定義をまとめたクラス
+ * JPEGのマーカーの定義をまとめたクラス
  */
-export class JpegCodec {
+export class JpegMarker {
 
     //
     // Start Of Frame markers, non-differential, Huffman coding.
@@ -9,7 +9,7 @@ export class JpegCodec {
     //
 
     /** Baseline DCT. ベースラインDCT */
-    static get SOF0() {
+    static get wsedSOF0() {
         return 0xFFC0;
     }
 

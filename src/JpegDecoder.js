@@ -1,7 +1,8 @@
 import * as Common from "./JpegCommon.js";
 import * as Signal from "./JpegSignal.js";
 import * as Stream from "./JpegDataStream.js";
-import * as Codec from "./JpegCodec.js";
+import * as Codec from "./JpegMarker.js";
+import {JpegMarker} from "./JpegMarker.js";
 
 // デバッグ用のフラグ
 const isDebuggingSOF = true;
@@ -111,7 +112,7 @@ export class JpegDecoder {
         }
 
         if (isDebuggingSOF) {
-            console.log("SOF");
+            console.log(`SOF${marker - JpegMarker.SOF0}`);
             console.log(segment);
         }
 
@@ -934,7 +935,7 @@ export class JpegDecoder {
 
         // SOI: イメージ開始マーカー
         let soiMarker = this._stream.readMaker();
-        if (soiMarker != Codec.JpegCodec.SOI) {
+        if (soiMarker != Codec.JpegMarker.SOI) {
             return false;
         }
 
@@ -944,101 +945,101 @@ export class JpegDecoder {
                 // SOFマーカー
 
                 // SOF0: ベースDCT (Baseline DCT)
-                case Codec.JpegCodec.SOF0:
+                case Codec.JpegMarker.SOF0:
                 // SOF1: 拡張シーケンシャルDCT、ハフマン符号 (Extended sequential DCT, Huffman coding)
-                case Codec.JpegCodec.SOF1:
+                case Codec.JpegMarker.SOF1:
                 // SOF2: プログレッシブDCT、ハフマン符号 (Progressive DCT, Huffman coding)
-                case Codec.JpegCodec.SOF2:
+                case Codec.JpegMarker.SOF2:
                     this._parseSOF(marker);
                     break;
 
                 // SOF3: 可逆圧縮 (シーケンシャル)、ハフマン符号 (Lossless (sequential), Huffman coding)
-                case Codec.JpegCodec.SOF3:
+                case Codec.JpegMarker.SOF3:
                     throw new JpegDecodeError(`Unsupported SOF marker: ${marker.toString(16)}`);
 
                 // SOFマーカー (非対応)
 
                 // SOF9: 拡張シーケンシャルDCT、算術符号 (Extended sequential DCT, arithmetic coding)
-                case Codec.JpegCodec.SOF9:
+                case Codec.JpegMarker.SOF9:
                 // SOF10: プログレッシブDCT、算術符号 (Progressive DCT, arithmetic coding)
-                case Codec.JpegCodec.SOF10:
+                case Codec.JpegMarker.SOF10:
                 // SOF11: 可逆圧縮、算術符号 (Lossless (sequential), arithmetic coding)
-                case Codec.JpegCodec.SOF11:
+                case Codec.JpegMarker.SOF11:
                     throw new JpegDecodeError(`Unsupported SOF marker: ${marker.toString(16)}`);
 
                 // 拡張用SOF
 
                 // Differential sequential DCT
-                case Codec.JpegCodec.SOF5:
+                case Codec.JpegMarker.SOF5:
                 // Differential progressive DCT
-                case Codec.JpegCodec.SOF6:
+                case Codec.JpegMarker.SOF6:
                 // Differential lossless (sequential)
-                case Codec.JpegCodec.SOF7:
+                case Codec.JpegMarker.SOF7:
                 // Differential sequential DCT
-                case Codec.JpegCodec.SOF13:
+                case Codec.JpegMarker.SOF13:
                 // Differential progressive DCT
-                case Codec.JpegCodec.SOF14:
+                case Codec.JpegMarker.SOF14:
                 // Differential lossless (sequential)
-                case Codec.JpegCodec.SOF15:
+                case Codec.JpegMarker.SOF15:
                     throw new JpegDecodeError(`Unsupported Expansion SOF marker: ${marker.toString(16)}`);
 
                 // SOS: Start of scan marker
-                case Codec.JpegCodec.SOS:
+                case Codec.JpegMarker.SOS:
                     this._parseSOS();
                     break;
 
                 // DQT: Define quantization table marker
-                case Codec.JpegCodec.DQT:
+                case Codec.JpegMarker.DQT:
                     this._parseDQT();
                     break;
 
                 // DHT: Define Huffman table marker
-                case Codec.JpegCodec.DHT:
+                case Codec.JpegMarker.DHT:
                     this._parseDHT();
                     break;
 
                 // DAC: Define arithmetic coding conditioning marker
-                case Codec.JpegCodec.DAC:
+                case Codec.JpegMarker.DAC:
                     this._parseDAC();
                     break;
 
                 // DRI: Define restart interval marker
-                case Codec.JpegCodec.DRI:
+                case Codec.JpegMarker.DRI:
                     this._parseDRI();
                     break;
 
                 // COM: コメントマーカ (Comment marker)
-                case Codec.JpegCodec.COM:
+                case Codec.JpegMarker.COM:
                     this._parseCOM();
                     break;
 
                 // DNL: (Define number of lines marker)
-                case Codec.JpegCodec.DNL:
+                case Codec.JpegMarker.DNL:
                     this._parseDNL();
                     break;
 
                 // DHP: (hierarchical progression maker)
-                case Codec.JpegCodec.DHP:
+                case Codec.JpegMarker.DHP:
                     this._parseSOF(marker);
                     break;
 
                 // EXP: (Expand reference components marker)
-                case Codec.JpegCodec.EXP:
+                case Codec.JpegMarker.EXP:
                     this._parseEXP();
                     break;
 
                 // EOI: エンドマーカ (End of image)
-                case Codec.JpegCodec.EOI:
+                case Codec.JpegMarker.EOI:
                     if (isDebuggingEOI) {
                         console.log("EOI");
                     }
                     return true;
 
                 default:
-                    if (marker >= Codec.JpegCodec.APPn && marker <= Codec.JpegCodec.APPn_end) {
+                    if (marker >= Codec.JpegMarker.APPn && marker <= Codec.JpegMarker.APPn_end) {
                         // APPn: アプリケーションデータマーカー
                         this._parseAPP(marker);
-                    } else if (marker >= Codec.JpegCodec.JPGn && marker <= Codec.JpegCodec.JPGn_end) {
+                    } else if (marker >= Codec.JpegMarker.JPGn && marker <= Codec.JpegMarker.JPGn_end) {
                         // JPGn: JPEG拡張マーカー
                         this._stream.skip(this._stream.readUint16() - 2);
                         console.info(`Unsupported JPEG extension maker: ${marker.toString(16)}`);
