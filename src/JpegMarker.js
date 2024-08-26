@@ -9,7 +9,7 @@ export class JpegMarker {
     //
 
     /** Baseline DCT. ベースラインDCT */
-    static get wsedSOF0() {
+    static get SOF0() {
         return 0xFFC0;
     }
 

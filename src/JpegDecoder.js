@@ -1,7 +1,7 @@
 import * as Common from "./JpegCommon.js";
 import * as Signal from "./JpegSignal.js";
 import * as Stream from "./JpegDataStream.js";
-import * as Codec from "./JpegMarker.js";
+import * as Maker from "./JpegMarker.js";
 import {JpegMarker} from "./JpegMarker.js";
 
 // デバッグ用のフラグ
@@ -18,6 +18,8 @@ const isDebuggingAPP = true;
 const isDebuggingDNL = true;
 const isDebuggingEXP = true;
 const isDebuggingEOI = true;
+
+let aaa = 0;
 
 /**
  * JPEGデコーダ用の例外クラス
@@ -59,8 +61,11 @@ export class JpegDecoder {
         // P: サンプル制度 (Sample precision)
         segment.P = this._stream.readUint8();
 
-        if (segment.P != 8 && segment.P != 12) {
-            // 8bitか12bitでない場合
+        if ((marker === Maker.JpegMarker.SOF0 && segment.P !== 8) ||
+            ((marker === Maker.JpegMarker.SOF1 || marker === Maker.JpegMarker.SOF2) &&
+                (segment.P !== 8 && segment.P !== 12))) {
+            // ベースラインで8bitでない場合
+            // 拡張シーケンシャルもしくはプログレッシブで8bitか12bitでない場合
             throw new JpegDecodeError();
         }
 
@@ -70,8 +75,20 @@ export class JpegDecoder {
         // X: ラインあたりのサンプル数 (Number of samples per line)
         segment.X = this._stream.readUint16();
 
+        if (segment.X < 1) {
+            // ライン数が1以下の場合
+            throw new JpegDecodeError();
+        }
+
         // Nf: フレームのイメージコンポーネント数 (Number of image components in frame)
         segment.Nf = this._stream.readUint8();
+
+        if (((marker === Maker.JpegMarker.SOF0 || marker === Maker.JpegMarker.SOF1) && segment.Nf < 1) ||
+            (marker === Maker.JpegMarker.SOF2 && (segment.Nf < 1 || segment.Nf > 4))) {
+            // ベースラインもしくは拡張シーケンシャルでコンポーネント数が1-255の範囲に収まってない場合
+            // プログレッシブでコンポーネントの数が1-4の範囲に収まってない場合
+            throw new JpegDecodeError();
+        }
 
         let maxNumUnitH = 0;
         let maxNumUnitV = 0;
@@ -80,39 +97,45 @@ export class JpegDecoder {
         for (let i = 0; i < segment.Nf; ++i) {
             let component = {};
 
-            // Ci: コンポーネントの識別子 (Component identifier)
+            // C_i: コンポーネントの識別子 (Component identifier)
             component.C = this._stream.readUint8();
 
             let H_V = this._stream.readUint8();
 
-            // Hi: 水平方向のサンプリング要素数 (Horizontal sampling factor)
+            // H_i: 水平方向のサンプリング要素数 (Horizontal sampling factor)
             component.H = 0xf & (H_V >> 4);
 
             if (component.H < 1 || component.H > 4) {
+                // 水平方向のサンプリング要素数が1-4の範囲に収まっていない場合
                 throw new JpegDecodeError();
             }
             if (component.H > maxNumUnitH) {
                 maxNumUnitH = component.H;
             }
 
-            // Vi: 垂直方向のサンプリング要素数 (Vertical sampling factor)
+            // V_i: 垂直方向のサンプリング要素数 (Vertical sampling factor)
             component.V = 0xf & H_V;
 
             if (component.V < 1 || component.V > 4) {
+                // 垂直方向のサンプリング要素数が1-4の範囲に収まっていない場合
                 throw new JpegDecodeError();
             }
             if (component.V > maxNumUnitV) {
                 maxNumUnitV = component.V;
             }
 
-            // Tqi: 量子化テーブルのセレクター (Quantization table destination selector)
+            // Tq_i: 量子化テーブルのセレクター (Quantization table destination selector)
             component.Tq = this._stream.readUint8();
+            if ((Maker.JpegMarker.SOF0 || Maker.JpegMarker.SOF1 || Maker.JpegMarker.SOF2) && component.Tq > 3) {
+                // 量子化テーブルのセレクターが0-3の範囲に収まっていない場合
+                throw new JpegDecodeError()
+            }
 
             segment.components[i] = component;
         }
 
         if (isDebuggingSOF) {
-            console.log(`SOF${marker - JpegMarker.SOF0}`);
+            console.log(`SOF${marker - Maker.JpegMarker.SOF0}`);
             console.log(segment);
         }
 
@@ -201,6 +224,10 @@ export class JpegDecoder {
         // Ns: スキャンのイメージコンポーネント数 (Number of image components in scan)
         segment.Ns = this._stream.readUint8();
 
+        if (segment.Ns < 1 || segment.Ns > 4) {
+            throw new JpegDecodeError();
+        }
+
         segment.components = new Array(segment.Ns);
         for (let j = 0; j < segment.Ns; ++j) {
             let component = {};
@@ -260,11 +287,11 @@ export class JpegDecoder {
             table.P = (Pq_Tq & 0xf0) >>> 4;
 
             let quantizationTable;
-            if (table.P == 0) {
+            if (table.P === 0) {
                 // 8bitの精度
                 table.Q = new Uint8Array(64);
                 quantizationTable = new Uint8Array(64);
-            } else if (table.P == 1) {
+            } else if (table.P === 1) {
                 // 16bitの精度
                 table.Q = new Uint16Array(64);
                 quantizationTable = new Uint16Array(64);
@@ -277,11 +304,11 @@ export class JpegDecoder {
             table.T = Pq_Tq & 0x0f;
 
             // Qk: 量子化テーブルの要素 (Quantization table element)
-            if (table.P == 0) {
+            if (table.P === 0) {
                 for (let k = 0; k < 64; ++k) {
                     table.Q[k] = this._stream.readUint8();
                 }
-            } else if (table.P == 1) {
+            } else if (table.P === 1) {
                 for (let k = 0; k < 64; ++k) {
                     table.Q[k] = this._stream.readUint16();
                 }
@@ -319,7 +346,7 @@ export class JpegDecoder {
             // Tc: テーブルクラス (Table class)
             table.Tc = 0xf & (Tc_Th >> 4);
 
-            if (table.Tc != 0 && table.Tc != 1) {
+            if (table.Tc !== 0 && table.Tc !== 1) {
                 // テーブルクラスが直流でも交流でもない
                 throw new JpegDecodeError();
             }
@@ -425,7 +452,7 @@ export class JpegDecoder {
 
         // Cm: コメントバイト (Comment byte)
         let readSize = this._stream.readUint8Array(segment.Cm = new Uint8Array(segment.Lc - 2), 0, segment.Lc - 2);
-        if (readSize != segment.Cm.length) {
+        if (readSize !== segment.Cm.length) {
             throw new JpegDecodeError();
         }
 
@@ -450,12 +477,12 @@ export class JpegDecoder {
         // Api: アプリケーションデータバイト (Application data byte)
         segment.Ap = new Uint8Array(segment.Lp - 2);
         let readSize = this._stream.readUint8Array(segment.Ap, 0, segment.Ap.length);
-        if (readSize != segment.Ap.length) {
+        if (readSize !== segment.Ap.length) {
             throw new JpegDecodeError();
         }
 
         if (isDebuggingAPP) {
-            console.log("APP");
+            console.log(`APP${marker - Maker.JpegMarker.APPn}`);
             console.log(segment);
         }
 
@@ -468,7 +495,7 @@ export class JpegDecoder {
 
         // Ld: (Define number of lines segment length)
         segment.Nd = this._stream.readUint16();
-        if (segment.Nd != 4) {
+        if (segment.Nd !== 4) {
             throw new JpegDecodeError();
         }
 
@@ -489,7 +516,7 @@ export class JpegDecoder {
 
         // Le: (Expand reference components segment length)
         segment.Le = this._stream.readUint16();
-        if (segment.Le != 3) {
+        if (segment.Le !== 3) {
             throw new JpegDecodeError();
         }
 
@@ -516,7 +543,7 @@ export class JpegDecoder {
         let code = 0;
         for (let j = 0; j < table.V.length; ++j) {
             let v = table.V[j];
-            if (v.length == 0) {
+            if (v.length === 0) {
                 tree.push({
                     maxHuffmanCode: 0,
                     values: null
@@ -525,7 +552,7 @@ export class JpegDecoder {
                 let values = new Array(v.length);
                 for (let k = 0; k < v.length; ++k) {
                     let value = v[k];
-                    if (table.Tc == 0) {
+                    if (table.Tc === 0) {
                         // DC成分用
                         values[k] = {
                             huffmanCode: code,
@@ -537,7 +564,7 @@ export class JpegDecoder {
                                 `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
                                 `additionalBits=${value}`);
                         }
-                    } else if (table.Tc == 1) {
+                    } else if (table.Tc === 1) {
                         // AC成分用
                         values[k] = {
                             huffmanCode: code,
@@ -545,13 +572,13 @@ export class JpegDecoder {
                             additionalBits: 0xf & value,
                         };
                         if (isDebugging) {
-                            if (values[k].additionalBits == 0) {
+                            if (values[k].additionalBits === 0) {
                                 let strValue;
-                                if (value == 0x00) {
+                                if (value === 0x00) {
                                     strValue = "EOB or EOB0";
                                 } else if (value => 0x10 && value <= 0xe0) {
                                     strValue = "EOB" + (value >> 4);
-                                } else if (value == 0xf0) {
+                                } else if (value === 0xf0) {
                                     strValue = "ZRL";
                                 }
                                 console.log(
@@ -595,7 +622,7 @@ export class JpegDecoder {
             }
         }
         let values = huffmanTree[bitsCount].values;
-        if (huffmanCode >= values.maxHuffmanCode || values.length == 0) {
+        if (huffmanCode >= values.maxHuffmanCode || values.length === 0) {
             throw new JpegDecodeError("Not found huffman code in the table.");
         }
 
@@ -650,7 +677,7 @@ export class JpegDecoder {
                     let block = frameComponent.blocks[i * frameComponent.numUnitsInMcu + k];
 
                     // ブロックの処理のスキップ
-                    if (segment.Ah == 0) {
+                    if (segment.Ah === 0) {
                         // シーケンシャル
                         if (numberOfEndOfBlocks > 0) {
                             numberOfEndOfBlocks--;
@@ -660,7 +687,7 @@ export class JpegDecoder {
                         // 逐次近似
                         if (numberOfEndOfBlocks > 0) {
                             for (let l = segment.Ss; l <= segment.Se; ++l) {
-                                if (block[l] != 0) {
+                                if (block[l] !== 0) {
                                     block[l] |= this._stream.readBits(1) << segment.Al;
                                 }
                             }
@@ -670,8 +697,8 @@ export class JpegDecoder {
                     }
 
                     // DC成分のハフマン符号のデコード
-                    if (segment.Ss == 0) {
-                        if (segment.Ah == 0) {
+                    if (segment.Ss === 0) {
+                        if (segment.Ah === 0) {
                             // シーケンシャル
                             let value = this._readValueWithHuffmanCode(dcHuffmanTree);
                             prevDcCoefs[j] = (block[0] = prevDcCoefs[j] + (value.value << segment.Al));
@@ -694,11 +721,11 @@ export class JpegDecoder {
 
                     // AC成分のハフマン符号のデコード
                     for (let l = Math.max(segment.Ss, 1); l <= segment.Se; ++l) {
-                        if (segment.Ah == 0) {
+                        if (segment.Ah === 0) {
                             // シーケンシャル
                             let value = this._readValueWithHuffmanCode(acHuffmanTree);
                             let debugValue;
-                            if (value.additionalBits == 0) {
+                            if (value.additionalBits === 0) {
                                 if (value.runLength < 0xf) {
                                     // EOB0 ～ EOB14 (End Of Block), DCTの係数を今回の係数も含め終端まで係数を0で埋める
                                     let runLength = (1 << value.runLength) + this._stream.readBits(value.runLength);
@@ -737,13 +764,13 @@ export class JpegDecoder {
                         } else {
                             // 逐次近似
                             let value = this._readValueWithHuffmanCode(acHuffmanTree);
-                            if (value.additionalBits == 0) {
+                            if (value.additionalBits === 0) {
                                 if (value.runLength < 0xf) {
                                     // EOB0 ～ EOB14 (End Of Block), DCTの係数を今回の係数も含め終端まで係数を0で埋める
                                     let runLength = (1 << value.runLength) + this._stream.readBits(value.runLength);
                                     numberOfEndOfBlocks = runLength - 1;
                                     while (l <= segment.Se) {
-                                        if (block[l] != 0) {
+                                        if (block[l] !== 0) {
                                             block[l] |= this._stream.readBits(1) << segment.Al;
                                         }
                                         l++;
@@ -752,7 +779,7 @@ export class JpegDecoder {
                                 } else {
                                     // ZRL (Zero Run Length), DCTの係数を16個を0で埋め、今回の要素も0として、計16要素を0で埋める
                                     for (let m = 0; m < 15 && l <= segment.Se;) {
-                                        if (block[l] != 0) {
+                                        if (block[l] !== 0) {
                                             block[l] |= this._stream.readBits(1) << segment.Al;
                                         } else {
                                             m++;
@@ -760,7 +787,7 @@ export class JpegDecoder {
                                         l++;
                                     }
                                     while (l <= segment.Se) {
-                                        if (block[l] != 0) {
+                                        if (block[l] !== 0) {
                                             block[l] |= this._stream.readBits(1) << segment.Al;
                                         } else {
                                             break;
@@ -768,9 +795,9 @@ export class JpegDecoder {
                                         l++;
                                     }
                                 }
-                            } else if (value.additionalBits == 1) {
+                            } else if (value.additionalBits === 1) {
                                 for (let m = 0; m < value.runLength && l <= segment.Se;) {
-                                    if (block[l] != 0) {
+                                    if (block[l] !== 0) {
                                         if (block[l] > 0) {
                                             block[l] |= this._stream.readBits(1) << segment.Al;
                                         } else {
@@ -782,7 +809,7 @@ export class JpegDecoder {
                                     l++;
                                 }
                                 while (l <= segment.Se) {
-                                    if (block[l] != 0) {
+                                    if (block[l] !== 0) {
                                         if (block[l] > 0) {
                                             block[l] |= this._stream.readBits(1) << segment.Al;
                                         } else {
@@ -804,7 +831,11 @@ export class JpegDecoder {
         }
 
         this._stream.resetRemainBits();
-        this._decodeImageWithScanData();
+
+        if (aaa === 0) {
+            this._decodeImageWithScanData();
+        }
+        aaa++;
     }
 
     /** スキャンデータを画像にデコードする */
@@ -891,10 +922,6 @@ export class JpegDecoder {
                                         m % (maxNumUnitH / numUnitH)
                                     );
                                 mcuPixels[elementIndex] = value;
-                                // if (componentId == 3) {
-                                // } else {
-                                //     mcuPixels[elementIndex] = 0;
-                                // }
                             }
                         }
                     }
@@ -911,7 +938,7 @@ export class JpegDecoder {
                 for (let h = 0; h < mcuWidth && mcuWidth * x + h < width; ++h) {
                     let mcuIndex = 3 * (mcuWidth * v + h);
                     let imageIndex = 3 * (width * (mcuHeight * y + v) + (mcuWidth * x + h));
-                    pixels[imageIndex + 0] = mcuPixels[mcuIndex + 0];
+                    pixels[imageIndex] = mcuPixels[mcuIndex];
                     pixels[imageIndex + 1] = mcuPixels[mcuIndex + 1];
                     pixels[imageIndex + 2] = mcuPixels[mcuIndex + 2];
                 }
@@ -935,7 +962,7 @@ export class JpegDecoder {
 
         // SOI: イメージ開始マーカー
         let soiMarker = this._stream.readMaker();
-        if (soiMarker != Codec.JpegMarker.SOI) {
+        if (soiMarker !== Maker.JpegMarker.SOI) {
             return false;
         }
 
@@ -945,111 +972,111 @@ export class JpegDecoder {
                 // SOFマーカー
 
                 // SOF0: ベースDCT (Baseline DCT)
-                case Codec.JpegMarker.SOF0:
+                case Maker.JpegMarker.SOF0:
                 // SOF1: 拡張シーケンシャルDCT、ハフマン符号 (Extended sequential DCT, Huffman coding)
-                case Codec.JpegMarker.SOF1:
+                case Maker.JpegMarker.SOF1:
                 // SOF2: プログレッシブDCT、ハフマン符号 (Progressive DCT, Huffman coding)
-                case Codec.JpegMarker.SOF2:
+                case Maker.JpegMarker.SOF2:
                     this._parseSOF(marker);
                     break;
 
                 // SOF3: 可逆圧縮 (シーケンシャル)、ハフマン符号 (Lossless (sequential), Huffman coding)
-                case Codec.JpegMarker.SOF3:
+                case Maker.JpegMarker.SOF3:
                     throw new JpegDecodeError(`Unsupported SOF marker: ${marker.toString(16)}`);
 
                 // SOFマーカー (非対応)
 
                 // SOF9: 拡張シーケンシャルDCT、算術符号 (Extended sequential DCT, arithmetic coding)
-                case Codec.JpegMarker.SOF9:
+                case Maker.JpegMarker.SOF9:
                 // SOF10: プログレッシブDCT、算術符号 (Progressive DCT, arithmetic coding)
-                case Codec.JpegMarker.SOF10:
+                case Maker.JpegMarker.SOF10:
                 // SOF11: 可逆圧縮、算術符号 (Lossless (sequential), arithmetic coding)
-                case Codec.JpegMarker.SOF11:
+                case Maker.JpegMarker.SOF11:
                     throw new JpegDecodeError(`Unsupported SOF marker: ${marker.toString(16)}`);
 
                 // 拡張用SOF
 
                 // Differential sequential DCT
-                case Codec.JpegMarker.SOF5:
+                case Maker.JpegMarker.SOF5:
                 // Differential progressive DCT
-                case Codec.JpegMarker.SOF6:
+                case Maker.JpegMarker.SOF6:
                 // Differential lossless (sequential)
-                case Codec.JpegMarker.SOF7:
+                case Maker.JpegMarker.SOF7:
                 // Differential sequential DCT
-                case Codec.JpegMarker.SOF13:
+                case Maker.JpegMarker.SOF13:
                 // Differential progressive DCT
-                case Codec.JpegMarker.SOF14:
+                case Maker.JpegMarker.SOF14:
                 // Differential lossless (sequential)
-                case Codec.JpegMarker.SOF15:
+                case Maker.JpegMarker.SOF15:
                     throw new JpegDecodeError(`Unsupported Expansion SOF marker: ${marker.toString(16)}`);
 
                 // SOS: Start of scan marker
-                case Codec.JpegMarker.SOS:
+                case Maker.JpegMarker.SOS:
                     this._parseSOS();
                     break;
 
                 // DQT: Define quantization table marker
-                case Codec.JpegMarker.DQT:
+                case Maker.JpegMarker.DQT:
                     this._parseDQT();
                     break;
 
                 // DHT: Define Huffman table marker
-                case Codec.JpegMarker.DHT:
+                case Maker.JpegMarker.DHT:
                     this._parseDHT();
                     break;
 
                 // DAC: Define arithmetic coding conditioning marker
-                case Codec.JpegMarker.DAC:
+                case Maker.JpegMarker.DAC:
                     this._parseDAC();
                     break;
 
                 // DRI: Define restart interval marker
-                case Codec.JpegMarker.DRI:
+                case Maker.JpegMarker.DRI:
                     this._parseDRI();
                     break;
 
                 // COM: コメントマーカ (Comment marker)
-                case Codec.JpegMarker.COM:
+                case Maker.JpegMarker.COM:
                     this._parseCOM();
                     break;
 
                 // DNL: (Define number of lines marker)
-                case Codec.JpegMarker.DNL:
+                case Maker.JpegMarker.DNL:
                     this._parseDNL();
                     break;
 
-                // DHP: (hierarchical progression maker)
-                case Codec.JpegMarker.DHP:
+                // DHP: (hierarchical progression marker)
+                case Maker.JpegMarker.DHP:
                     this._parseSOF(marker);
                     break;
 
                 // EXP: (Expand reference components marker)
-                case Codec.JpegMarker.EXP:
+                case Maker.JpegMarker.EXP:
                     this._parseEXP();
                     break;
 
                 // EOI: エンドマーカ (End of image)
-                case Codec.JpegMarker.EOI:
+                case Maker.JpegMarker.EOI:
                     if (isDebuggingEOI) {
                         console.log("EOI");
                     }
                     return true;
 
                 default:
-                    if (marker >= Codec.JpegMarker.APPn && marker <= Codec.JpegMarker.APPn_end) {
+                    if (marker >= Maker.JpegMarker.APPn && marker <= Maker.JpegMarker.APPn_end) {
                         // APPn: アプリケーションデータマーカー
                         this._parseAPP(marker);
-                    } else if (marker >= Codec.JpegMarker.JPGn && marker <= Codec.JpegMarker.JPGn_end) {
+                    } else if (marker >= Maker.JpegMarker.JPGn && marker <= Maker.JpegMarker.JPGn_end) {
                         // JPGn: JPEG拡張マーカー
                         this._stream.skip(this._stream.readUint16() - 2);
-                        console.info(`Unsupported JPEG extension maker: ${marker.toString(16)}`);
-                    } else if ((marker & 0xff00) != 0xff00) {
+                        console.info(`Unsupported JPEG extension marker: ${marker.toString(16)}`);
+                    } else if ((marker & 0xff00) !== 0xff00) {
                         // 不明、未実装マーカー
                         this._stream.skip(this._stream.readUint16() - 2);
-                        console.info(`Unknown maker: ${marker.toString(16)}`);
+                        console.info(`Unknown marker: ${marker.toString(16)}`);
                     } else {
                         // マーカーでない
-                        console.info(`Not maker: ${marker.toString(16)}`);
+                        console.info(`Not marker: ${marker.toString(16)}`);
                         return false;
                     }
             }
