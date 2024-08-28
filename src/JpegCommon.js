@@ -1,4 +1,6 @@
-/** RGBをYCbCrに変換する */
+/**
+ * RGBをYCbCrに変換する
+ */
 export function convertRgbToYcbcr(dst, dstOff, src, srcOff, stride = 3, count = 0) {
     let r = src[srcOff + 0];
     let g = src[srcOff + 1];
@@ -8,7 +10,9 @@ export function convertRgbToYcbcr(dst, dstOff, src, srcOff, stride = 3, count = 
     dst[dstOff + 2] = 0.5 * r - 0.4187 * g - 0.0813 * b + 128; // Cr
 }
 
-/** YCbCrをRGBに変換する */
+/**
+ * YCbCrをRGBに変換する
+ */
 export function convertYcbcrToRgb(dst, dstOff, src, srcOff) {
     let y = src[srcOff + 0] + 128;
     let cb = src[srcOff + 1] + 128;
@@ -18,7 +22,9 @@ export function convertYcbcrToRgb(dst, dstOff, src, srcOff) {
     dst[dstOff + 2] = y + 1.772 * (cb - 128); // B
 }
 
-/** ジグザグシーケンスの配列インデックス */
+/**
+ * ジグザグシーケンスの配列インデックス
+ */
 const zigzagSequenceIndices = [
     0, 1, 5, 6, 14, 15, 27, 28,
     2, 4, 7, 13, 16, 26, 29, 42,
@@ -30,14 +36,18 @@ const zigzagSequenceIndices = [
     35, 36, 48, 49, 57, 58, 62, 63
 ];
 
-/** 8*8の正方行列をジグザグに並べる */
+/**
+ * 8*8の正方行列をジグザグに並べる
+ */
 export function orderZigzagSequence(dst, src) {
     for (let i = 0; i < 64; ++i) {
         dst[zigzagSequenceIndices[i]] = src[i];
     }
 }
 
-/** ジグザグに並べられた配列を8*8の正方行列に並べなおす */
+/**
+ * ジグザグに並べられた配列を8*8の正方行列に並べなおす
+ */
 export function reorderZigzagSequence(dst, src) {
     for (let i = 0; i < 64; ++i) {
         dst[i] = src[zigzagSequenceIndices[i]];

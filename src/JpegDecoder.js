@@ -1,7 +1,6 @@
 import * as Common from "./JpegCommon.js";
 import * as Signal from "./JpegSignal.js";
-import * as Stream from "./JpegDataStream.js";
-import * as Maker from "./JpegMarker.js";
+import {JpegReadStream} from "./JpegDataStream.js";
 import {JpegMarker} from "./JpegMarker.js";
 
 // デバッグ用のフラグ
@@ -38,7 +37,7 @@ export class JpegDecoder {
 
     constructor(buffer, offset) {
         /** データストリーム */
-        this._stream = new Stream.JpegReadStream(buffer, offset, length);
+        this._stream = new JpegReadStream(buffer, offset, length);
         /** フーレムのデータ */
         this._frame = null;
         /** 量子化テーブル */
@@ -61,11 +60,12 @@ export class JpegDecoder {
         // P: サンプル制度 (Sample precision)
         segment.P = this._stream.readUint8();
 
-        if ((marker === Maker.JpegMarker.SOF0 && segment.P !== 8) ||
-            ((marker === Maker.JpegMarker.SOF1 || marker === Maker.JpegMarker.SOF2) &&
-                (segment.P !== 8 && segment.P !== 12))) {
+        if (marker === JpegMarker.SOF0 && segment.P !== 8) {
             // ベースラインで8bitでない場合
-            // 拡張シーケンシャルもしくはプログレッシブで8bitか12bitでない場合
+            throw new JpegDecodeError();
+        } else if ((marker === JpegMarker.SOF1 || marker === JpegMarker.SOF2) &&
+            (segment.P !== 8 && segment.P !== 12)) {
+            // 拡張シーケンシャルもしくはプログレッシブで8bitでなく12bitでもない場合
             throw new JpegDecodeError();
         }
 
@@ -83,15 +83,17 @@ export class JpegDecoder {
         // Nf: フレームのイメージコンポーネント数 (Number of image components in frame)
         segment.Nf = this._stream.readUint8();
 
-        if (((marker === Maker.JpegMarker.SOF0 || marker === Maker.JpegMarker.SOF1) && segment.Nf < 1) ||
-            (marker === Maker.JpegMarker.SOF2 && (segment.Nf < 1 || segment.Nf > 4))) {
-            // ベースラインもしくは拡張シーケンシャルでコンポーネント数が1-255の範囲に収まってない場合
-            // プログレッシブでコンポーネントの数が1-4の範囲に収まってない場合
+        if ((marker === JpegMarker.SOF0 || marker === JpegMarker.SOF1) && segment.Nf < 1) {
+            // ベースラインもしくは拡張シーケンシャルでコンポーネント数が1以下の場合
+            throw new JpegDecodeError();
+        } else if (marker === JpegMarker.SOF2 && (segment.Nf < 1 || segment.Nf > 4)) {
+            // プログレッシブでコンポーネント数が1～4の範囲に収まっていない場合
             throw new JpegDecodeError();
         }
 
-        let maxNumUnitH = 0;
-        let maxNumUnitV = 0;
+        // ユニットの最大数
+        let maxUnitHInMcu = 0;
+        let maxUnitVInMcu = 0;
 
         segment.components = new Array(segment.Nf);
         for (let i = 0; i < segment.Nf; ++i) {
@@ -106,27 +108,27 @@ export class JpegDecoder {
             component.H = 0xf & (H_V >> 4);
 
             if (component.H < 1 || component.H > 4) {
-                // 水平方向のサンプリング要素数が1-4の範囲に収まっていない場合
+                // 水平方向のサンプリング要素数が1～4の範囲に収まっていない場合
                 throw new JpegDecodeError();
             }
-            if (component.H > maxNumUnitH) {
-                maxNumUnitH = component.H;
+            if (component.H > maxUnitHInMcu) {
+                maxUnitHInMcu = component.H;
             }
 
             // V_i: 垂直方向のサンプリング要素数 (Vertical sampling factor)
             component.V = 0xf & H_V;
 
             if (component.V < 1 || component.V > 4) {
-                // 垂直方向のサンプリング要素数が1-4の範囲に収まっていない場合
+                // 垂直方向のサンプリング要素数が1～4の範囲に収まっていない場合
                 throw new JpegDecodeError();
             }
-            if (component.V > maxNumUnitV) {
-                maxNumUnitV = component.V;
+            if (component.V > maxUnitVInMcu) {
+                maxUnitVInMcu = component.V;
             }
 
             // Tq_i: 量子化テーブルのセレクター (Quantization table destination selector)
             component.Tq = this._stream.readUint8();
-            if ((Maker.JpegMarker.SOF0 || Maker.JpegMarker.SOF1 || Maker.JpegMarker.SOF2) && component.Tq > 3) {
+            if ((JpegMarker.SOF0 || JpegMarker.SOF1 || JpegMarker.SOF2) && component.Tq > 3) {
                 // 量子化テーブルのセレクターが0-3の範囲に収まっていない場合
                 throw new JpegDecodeError()
             }
@@ -135,24 +137,25 @@ export class JpegDecoder {
         }
 
         if (isDebuggingSOF) {
-            console.log(`SOF${marker - Maker.JpegMarker.SOF0}`);
+            console.log(`SOF${marker - JpegMarker.SOF0}`);
             console.log(segment);
         }
 
+        // イメージのサイズ
         let imageWidth = segment.X;
         let imageHeight = segment.Y;
 
         // MCUに含まれるユニットの最大数
-        let maxNumUnitsInMcu = maxNumUnitH * maxNumUnitV;
+        let maxUnitsInMcu = maxUnitHInMcu * maxUnitVInMcu;
 
         // MCUの寸法
-        let mcuWidth = 8 * maxNumUnitH;
-        let mcuHeight = 8 * maxNumUnitV;
+        let mcuWidth = 8 * maxUnitHInMcu;
+        let mcuHeight = 8 * maxUnitVInMcu;
 
         // イメージに含まれるMCUの個数
-        let numMcuH = Math.ceil(imageWidth / mcuWidth);
-        let numMcuV = Math.ceil(imageHeight / mcuHeight);
-        let numMcusInImage = numMcuH * numMcuV;
+        let numMcuHInImage = Math.ceil(imageWidth / mcuWidth);
+        let numMcuVInImage = Math.ceil(imageHeight / mcuHeight);
+        let numMcusInImage = numMcuHInImage * numMcuVInImage;
 
         // 各コンポーネントの設定
         let components = new Array(segment.Nf);
@@ -160,10 +163,10 @@ export class JpegDecoder {
             let component = segment.components[i];
 
             let id = component.C;
-            let numUnitH = component.H;
-            let numUnitV = component.V;
-            let numUnitsInMcu = numUnitH * numUnitV;
-            let qt = component.Tq;
+            let numUnitHInMcu = component.H;
+            let numUnitVInMcu = component.V;
+            let numUnitsInMcu = numUnitHInMcu * numUnitVInMcu;
+            let qtSelector = component.Tq;
 
             let blocks = new Array(numMcusInImage * numUnitsInMcu);
             for (let j = 0; j < blocks.length; ++j) {
@@ -173,14 +176,14 @@ export class JpegDecoder {
             components[i] = {
                 /** コンポーネントID */
                 id: id,
-                /** 水平方向のユニットする */
-                numUnitH: numUnitH,
-                /** 垂直方向のユニット数 */
-                numUnitV: numUnitV,
-                /** MCUに含まれるユニットの数 */
+                /** 水平方向のMCU内のユニット数 */
+                numUnitHInMcu: numUnitHInMcu,
+                /** 垂直方向のMCU内のユニット数 */
+                numUnitVInMcu: numUnitVInMcu,
+                /** MCU内に含まれるユニットの数 */
                 numUnitsInMcu: numUnitsInMcu,
                 /** 量子化テーブルのセレクター */
-                qtSelector: qt,
+                qtSelector: qtSelector,
                 /** ブロック */
                 blocks: blocks
             };
@@ -192,20 +195,20 @@ export class JpegDecoder {
             /** イメージの高さ */
             height: imageHeight,
             /** 水平方向のMCUのユニットの最大数 */
-            maxNumUnitH: maxNumUnitH,
+            maxUnitHInMcu: maxUnitHInMcu,
             /** 垂直方向のMCUのユニットの最大数 */
-            maxNumUnitV: maxNumUnitV,
-            /** MCUに含まれるユニットの最大数 */
-            maxNumUnitsInMcu: maxNumUnitsInMcu,
+            maxUnitVInMcu: maxUnitVInMcu,
+            /** MCU内に含まれるユニットの最大数 */
+            maxUnitsInMcu: maxUnitsInMcu,
             /** MCUの幅 */
             mcuWidth: mcuWidth,
             /** MCUの高さ */
             mcuHeight: mcuHeight,
             /** イメージに含まれる水平方向のMCU数 */
-            numMcuH: numMcuH,
+            numMcuHInImage: numMcuHInImage,
             /** イメージに含まれる垂直方向のMCU数 */
-            numMcuV: numMcuV,
-            /** イメージに含まれるMCU数 */
+            numMcuVInImage: numMcuVInImage,
+            /** イメージ内に含まれるMCU数 */
             numMcusInImage: numMcusInImage,
             /** コンポーネント配列 */
             components: components
@@ -266,7 +269,6 @@ export class JpegDecoder {
         }
 
         this._decodeScanDataByHuffmanCoding(segment);
-
         return segment;
     }
 
@@ -482,14 +484,16 @@ export class JpegDecoder {
         }
 
         if (isDebuggingAPP) {
-            console.log(`APP${marker - Maker.JpegMarker.APPn}`);
+            console.log(`APP${marker - JpegMarker.APPn}`);
             console.log(segment);
         }
 
         return segment;
     }
 
-    /** ライン数定義セグメントの解析 */
+    /**
+     * ライン数定義セグメントの解析
+     */
     _parseDNL() {
         let segment = {};
 
@@ -510,7 +514,9 @@ export class JpegDecoder {
         return segment;
     }
 
-    /** 伸張リファレンスコンポーネントセグメントの解析 */
+    /**
+     * 伸張リファレンスコンポーネントセグメントの解析
+     */
     _parseEXP() {
         let segment = {};
 
@@ -535,7 +541,9 @@ export class JpegDecoder {
         return segment;
     }
 
-    /** ハフマンテーブルをツリーにデコードする */
+    /**
+     * ハフマンテーブルをツリーにデコードする
+     */
     _decodeHuffmanTables(table) {
         let isDebugging = isDebuggingDHT && isDebuggingDHTDetail;
 
@@ -609,7 +617,9 @@ export class JpegDecoder {
         return tree;
     }
 
-    /** ハフマン符号化された値を読み込む */
+    /**
+     * ハフマン符号化された値を読み込む
+     */
     _readValueWithHuffmanCode(huffmanTree) {
         // ハフマンコードを検索
         let bitsCount = 0;
@@ -646,7 +656,9 @@ export class JpegDecoder {
         };
     }
 
-    /** スキャンデータをハフマン符号化を使用してデコードする */
+    /**
+     * スキャンデータをハフマン符号化を使用してデコードする
+     */
     _decodeScanDataByHuffmanCoding(segment) {
         let isDebugging = isDebuggingSOS && isDebuggingSOSDetail;
 
@@ -832,24 +844,26 @@ export class JpegDecoder {
 
         this._stream.resetRemainBits();
 
-        if (aaa === 0) {
+        if (aaa === 1) {
             this._decodeImageWithScanData();
         }
         aaa++;
     }
 
-    /** スキャンデータを画像にデコードする */
+    /**
+     * スキャンデータを画像にデコードする
+     */
     _decodeImageWithScanData() {
         let width = this._frame.width;
         let height = this._frame.height;
         let pixels = new Uint8ClampedArray(width * height * 3);
 
-        let maxNumUnitH = this._frame.maxNumUnitH;
-        let maxNumUnitV = this._frame.maxNumUnitV;
-        let maxNumUnitsInMcu = this._frame.maxNumUnitsInMcu;
+        let maxUnitHInMcu = this._frame.maxUnitHInMcu;
+        let maxUnitVInMcu = this._frame.maxUnitVInMcu;
+        let maxUnitsInMcu = this._frame.maxUnitsInMcu;
         let mcuWidth = this._frame.mcuWidth;
         let mcuHeight = this._frame.mcuHeight;
-        let numMcuH = this._frame.numMcuH;
+        let numMcuHInImage = this._frame.numMcuHInImage;
         let numMcusInImage = this._frame.numMcusInImage;
 
         let components = this._frame.components;
@@ -865,8 +879,8 @@ export class JpegDecoder {
         }
 
         for (let i = 0; i < numMcusInImage; ++i) {
-            let x = i % numMcuH;
-            let y = Math.floor(i / numMcuH);
+            let x = i % numMcuHInImage;
+            let y = Math.floor(i / numMcuHInImage);
 
             for (let j = 0; j < components.length; ++j) {
                 let component = components[j];
@@ -874,8 +888,8 @@ export class JpegDecoder {
 
                 let quantizationTable = quantizationTables[j];
 
-                let numUnitH = component.numUnitH;
-                let numUnitV = component.numUnitV;
+                let numUnitH = component.numUnitHInMcu;
+                let numUnitV = component.numUnitVInMcu;
                 let numUnitsInMcu = component.numUnitsInMcu;
 
                 let matrix = matrices[j];
@@ -911,15 +925,15 @@ export class JpegDecoder {
                             let currentIndex =
                                 startIndex +
                                 3 * (
-                                    mcuWidth * v * maxNumUnitV / numUnitV +
-                                    h * maxNumUnitH / numUnitH
+                                    mcuWidth * v * maxUnitVInMcu / numUnitV +
+                                    h * maxUnitHInMcu / numUnitH
                                 );
-                            for (let m = 0, mEnd = maxNumUnitsInMcu / numUnitsInMcu; m < mEnd; ++m) {
+                            for (let m = 0, mEnd = maxUnitsInMcu / numUnitsInMcu; m < mEnd; ++m) {
                                 let elementIndex =
                                     currentIndex +
                                     3 * (
-                                        mcuWidth * ((m / (maxNumUnitH / numUnitH)) | 0) +
-                                        m % (maxNumUnitH / numUnitH)
+                                        mcuWidth * ((m / (maxUnitHInMcu / numUnitH)) | 0) +
+                                        m % (maxUnitHInMcu / numUnitH)
                                     );
                                 mcuPixels[elementIndex] = value;
                             }
@@ -956,13 +970,15 @@ export class JpegDecoder {
         }
     }
 
-    /** JPEGのデコードを行う */
+    /**
+     * JPEGのデコードを行う
+     */
     decode(callback) {
         this._callback = callback;
 
         // SOI: イメージ開始マーカー
         let soiMarker = this._stream.readMaker();
-        if (soiMarker !== Maker.JpegMarker.SOI) {
+        if (soiMarker !== JpegMarker.SOI) {
             return false;
         }
 
@@ -972,101 +988,101 @@ export class JpegDecoder {
                 // SOFマーカー
 
                 // SOF0: ベースDCT (Baseline DCT)
-                case Maker.JpegMarker.SOF0:
+                case JpegMarker.SOF0:
                 // SOF1: 拡張シーケンシャルDCT、ハフマン符号 (Extended sequential DCT, Huffman coding)
-                case Maker.JpegMarker.SOF1:
+                case JpegMarker.SOF1:
                 // SOF2: プログレッシブDCT、ハフマン符号 (Progressive DCT, Huffman coding)
-                case Maker.JpegMarker.SOF2:
+                case JpegMarker.SOF2:
                     this._parseSOF(marker);
                     break;
 
                 // SOF3: 可逆圧縮 (シーケンシャル)、ハフマン符号 (Lossless (sequential), Huffman coding)
-                case Maker.JpegMarker.SOF3:
+                case JpegMarker.SOF3:
                     throw new JpegDecodeError(`Unsupported SOF marker: ${marker.toString(16)}`);
 
                 // SOFマーカー (非対応)
 
                 // SOF9: 拡張シーケンシャルDCT、算術符号 (Extended sequential DCT, arithmetic coding)
-                case Maker.JpegMarker.SOF9:
+                case JpegMarker.SOF9:
                 // SOF10: プログレッシブDCT、算術符号 (Progressive DCT, arithmetic coding)
-                case Maker.JpegMarker.SOF10:
+                case JpegMarker.SOF10:
                 // SOF11: 可逆圧縮、算術符号 (Lossless (sequential), arithmetic coding)
-                case Maker.JpegMarker.SOF11:
+                case JpegMarker.SOF11:
                     throw new JpegDecodeError(`Unsupported SOF marker: ${marker.toString(16)}`);
 
                 // 拡張用SOF
 
                 // Differential sequential DCT
-                case Maker.JpegMarker.SOF5:
+                case JpegMarker.SOF5:
                 // Differential progressive DCT
-                case Maker.JpegMarker.SOF6:
+                case JpegMarker.SOF6:
                 // Differential lossless (sequential)
-                case Maker.JpegMarker.SOF7:
+                case JpegMarker.SOF7:
                 // Differential sequential DCT
-                case Maker.JpegMarker.SOF13:
+                case JpegMarker.SOF13:
                 // Differential progressive DCT
-                case Maker.JpegMarker.SOF14:
+                case JpegMarker.SOF14:
                 // Differential lossless (sequential)
-                case Maker.JpegMarker.SOF15:
+                case JpegMarker.SOF15:
                     throw new JpegDecodeError(`Unsupported Expansion SOF marker: ${marker.toString(16)}`);
 
                 // SOS: Start of scan marker
-                case Maker.JpegMarker.SOS:
+                case JpegMarker.SOS:
                     this._parseSOS();
                     break;
 
                 // DQT: Define quantization table marker
-                case Maker.JpegMarker.DQT:
+                case JpegMarker.DQT:
                     this._parseDQT();
                     break;
 
                 // DHT: Define Huffman table marker
-                case Maker.JpegMarker.DHT:
+                case JpegMarker.DHT:
                     this._parseDHT();
                     break;
 
                 // DAC: Define arithmetic coding conditioning marker
-                case Maker.JpegMarker.DAC:
+                case JpegMarker.DAC:
                     this._parseDAC();
                     break;
 
                 // DRI: Define restart interval marker
-                case Maker.JpegMarker.DRI:
+                case JpegMarker.DRI:
                     this._parseDRI();
                     break;
 
                 // COM: コメントマーカ (Comment marker)
-                case Maker.JpegMarker.COM:
+                case JpegMarker.COM:
                     this._parseCOM();
                     break;
 
                 // DNL: (Define number of lines marker)
-                case Maker.JpegMarker.DNL:
+                case JpegMarker.DNL:
                     this._parseDNL();
                     break;
 
                 // DHP: (hierarchical progression marker)
-                case Maker.JpegMarker.DHP:
+                case JpegMarker.DHP:
                     this._parseSOF(marker);
                     break;
 
                 // EXP: (Expand reference components marker)
-                case Maker.JpegMarker.EXP:
+                case JpegMarker.EXP:
                     this._parseEXP();
                     break;
 
                 // EOI: エンドマーカ (End of image)
-                case Maker.JpegMarker.EOI:
+                case JpegMarker.EOI:
                     if (isDebuggingEOI) {
                         console.log("EOI");
                     }
                     return true;
 
                 default:
-                    if (marker >= Maker.JpegMarker.APPn && marker <= Maker.JpegMarker.APPn_end) {
+                    if (marker >= JpegMarker.APPn && marker <= JpegMarker.APPn_end) {
                         // APPn: アプリケーションデータマーカー
                         this._parseAPP(marker);
-                    } else if (marker >= Maker.JpegMarker.JPGn && marker <= Maker.JpegMarker.JPGn_end) {
+                    } else if (marker >= JpegMarker.JPGn && marker <= JpegMarker.JPGn_end) {
                         // JPGn: JPEG拡張マーカー
                         this._stream.skip(this._stream.readUint16() - 2);
                         console.info(`Unsupported JPEG extension marker: ${marker.toString(16)}`);

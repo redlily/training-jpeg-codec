@@ -10,7 +10,7 @@ class JpegDataStreamError extends Error {
 }
 
 /**
- * 書き込み用のデータストリームクラス
+ * JPEGのデータ書き込み用のデータストリームクラス
  */
 export class JpegWriteStream {
     // TODO
@@ -21,47 +21,63 @@ export class JpegWriteStream {
  */
 export class JpegReadStream {
 
-    /** コンストラクタ */
-    constructor(buffer, offset = 0) {
-        this._view = new DataView(buffer, offset);
+    /**
+     * コンストラクタ
+     */
+    constructor(buffer, offset = 0, length = null) {
+        this._view = new DataView(buffer, offset, length);
         this._off = 0;
         this._remainBits = 0;
         this._remainBitsCount = 0;
     }
 
-    /** ストリームのカーソル位置を取得する */
+    /**
+     * ストリームのカーソル位置を取得する
+     */
     get position() {
         return this._off;
     }
 
-    /** ストリームのカーソル位置を設定する */
+    /**
+     * ストリームのカーソル位置を設定する
+     */
     set position(position) {
         this._off = position;
     }
 
-    /** 内部に保存している未出力のビット配列を取得する */
+    /**
+     * 内部に保存している未出力のビット配列を取得する
+     */
     get remainBits() {
         return this._remainBits;
     }
 
-    /** 内部に保存している未出力のビット配列のビット数を取得する */
+    /**
+     * 内部に保存している未出力のビット配列のビット数を取得する
+     */
     get remainBitsCount() {
         return this._remainBitsCount;
     }
 
-    /** ストリームを指定するbyte数スキップする */
+    /**
+     * ストリームを指定するbyte数スキップする
+     */
     skip(size) {
         this._off += size;
     }
 
-    /** 符号なしの8bitの整数を読み込む */
+    /**
+     * 符号なしの8bitの整数を読み込む
+     */
     readUint8() {
         let value = this._view.getUint8(this._off);
         this._off += 1;
         return value;
     }
 
-    /** 符号なしの16bitの整数を読み込む */
+    /**
+     * 符号なしの16bitの整数を読み込む
+     */
     readUint16() {
         let value = this._view.getUint16(this._off);
         this._off += 2;
@@ -88,7 +104,7 @@ export class JpegReadStream {
     /** 指定ビット数のデータを読み込む */
     readBits(num) {
         // 0bitの場合
-        if (num == 0) {
+        if (num === 0) {
             return 0;
         }
 
@@ -107,9 +123,9 @@ export class JpegReadStream {
         this._remainBitsCount = 0;
         while (num >= 8) {
             let bits = this.readUint8();
-            if (bits == 0xff) {
+            if (bits === 0xff) {
                 let next = this.readUint8();
-                if (next != 0) {
+                if (next !== 0) {
                     throw new JpegDataStreamError("This data stream has been broken.");
                 }
             }
@@ -118,9 +134,9 @@ export class JpegReadStream {
         }
         if (num > 0) {
             this._remainBits = this.readUint8();
-            if (this._remainBits == 0xff) {
+            if (this._remainBits === 0xff) {
                 let next = this.readUint8();
-                if (next != 0) {
+                if (next !== 0) {
                     throw new JpegDataStreamError("This data stream has been broken.");
                 }
             }

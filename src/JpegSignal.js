@@ -1,4 +1,6 @@
-/** 正の整数に対し2の対数を整数で返す */
+/**
+ * 正の整数に対し2の対数を整数で返す
+ */
 function log2ui(n) {
     n |= n >>> 1;
     n |= n >>> 2;
@@ -12,14 +14,18 @@ function log2ui(n) {
     return (n & 0x0000ffff) + (n >>16 & 0x0000ffff) - 1;
 }
 
-/** 要素を入れ替える */
+/**
+ * 要素を入れ替える
+ */
 function swap(v, a, b) {
     let t = v[a];
     v[a] = v[b];
     v[b] = t;
 }
 
-/** 要素の2次元配列の並び替え */
+/**
+ * 要素の2次元配列の並び替え
+ */
 function swapElements2d(n, x) {
     let nl = log2ui(n);
     let nn = 1 << (nl << 1);
@@ -69,8 +75,8 @@ function swapElements2d(n, x) {
 /**
  * 8*8の正方行列の高速離散コサイン変換
  * 中身はJPEG用に調整したB.G.Lee型の高速DCTタイプII
- * @oaran n 正方行列の一辺の要素数
- * @param x n*nの正方行列
+ * @param {float[]} n 正方行列の一辺の要素数
+ * @param {uint} x n*nの正方行列
  */
 export function dct(n, x = 8) {
     let nl = log2ui(n);
@@ -155,7 +161,7 @@ export function dct(n, x = 8) {
 /**
  * 8*8正方行列の高速逆離散コサイン変換
  * 中身はJPEG用に調整したB.G.Lee型の高速DCTタイプIII
- * @oaran n 正方行列の一辺の要素数
+ * @param n 正方行列の一辺の要素数
  * @param x n*nの正方行列
  */
 export function idct(n, x = 8) {
