@@ -11,7 +11,7 @@ function log2ui(n) {
     n = (n & 0x33333333) + (n >> 2 & 0x33333333);
     n = (n & 0x0f0f0f0f) + (n >> 4 & 0x0f0f0f0f);
     n = (n & 0x00ff00ff) + (n >> 8 & 0x00ff00ff);
-    return (n & 0x0000ffff) + (n >>16 & 0x0000ffff) - 1;
+    return (n & 0x0000ffff) + (n >> 16 & 0x0000ffff) - 1;
 }
 
 /**
@@ -148,7 +148,7 @@ export function dct(n, x) {
     for (let i = 1; i < n; ++i) {
         x[i] *= 0.25 * 0.70710678118;
     }
-    for (let i = n; i < nn; ) {
+    for (let i = n; i < nn;) {
         x[i++] *= 0.25 * 0.70710678118;
         for (let j = i + n; i < j; ++i) {
             x[i] *= 0.25;

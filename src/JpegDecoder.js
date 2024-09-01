@@ -10,7 +10,7 @@ const isDebuggingSOSDetail = false;
 const isDebuggingDQT = true;
 const isDebuggingDAC = true;
 const isDebuggingDHT = true;
-const isDebuggingDHTDetail = false;
+const isDebuggingDHTDetail = true;
 const isDebuggingDRI = true;
 const isDebuggingCOM = true;
 const isDebuggingAPP = true;
@@ -122,7 +122,7 @@ export class JpegDecoder {
             // Tq_i: 量子化テーブル出力セレクター (Quantization table destination selector)
             component.Tq = this._stream.readUint8();
             if ((JpegMarker.SOF0 || JpegMarker.SOF1 || JpegMarker.SOF2) && component.Tq > 3) {
-                // 量子化テーブルのセレクターが0-3の範囲に収まっていない場合
+                // 量子化テーブルのセレクターが～3の範囲に収まっていない場合
                 throw new JpegDecodeError()
             }
 
@@ -509,7 +509,7 @@ export class JpegDecoder {
 
         for (let i = 0; i < this._frame.components.length; ++i) {
             let component = this._frame.components[i];
-            if (component.componentId < 1 || component.componentId > 2) {
+            if (component.componentId < 1 || component.componentId > 3) {
                 continue;
             }
 
@@ -530,12 +530,8 @@ export class JpegDecoder {
                 // ジグザグシーケンスの並び戻す
                 reorderZigzagSequence(unit, component.units[j]);
 
-
-                // DC成分標本化
-                unit[0] = unit[0] * quantizationTable[0];
-
-                // AC成分標本化
-                for (let k = 1; k < 64; ++k) {
+                // 標本化
+                for (let k = 0; k < 64; ++k) {
                     unit[k] *= quantizationTable[k];
                 }
 
@@ -672,12 +668,12 @@ export class JpegDecoder {
                 throw new JpegDecodeError()
             }
 
-            // Li: 長さiのハフマンコード数 (Number of Huffman codes of length i)
+            // L_i: 長さiのハフマンコード数 (Number of Huffman codes of length i)
             table.L = new Array(16);
 
             this._stream.readUint8Array(table.L, 0, 16);
 
-            // Vi,j: 各ハフマンコードの値 (Value associated with each Huffman code)
+            // V_{i, j}: 各ハフマンコードの値 (Value associated with each Huffman code)
             table.V = new Array(16);
 
             for (let i = 0; i < 16; ++i) {

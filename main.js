@@ -27,14 +27,14 @@ function onUploadImage(event) {
                 let canvas = document.createElement("canvas");
                 canvas.width = out.width;
                 canvas.height = out.height;
-                // canvas.style.width = '100%'
+                canvas.style.width = '100%'
 
                 let context = canvas.getContext("2d");
                 let imageData = context.createImageData(out.width, out.height);
                 for (let i = 0; i < out.width * out.height; ++i) {
-                    imageData.data[4 * i] = out.pixels[3 * i];
-                    imageData.data[4 * i + 1] = out.pixels[3 * i + 1];
-                    imageData.data[4 * i + 2] = out.pixels[3 * i + 2];
+                    imageData.data[4 * i] = Math.min(out.pixels[3 * i], 255);
+                    imageData.data[4 * i + 1] = Math.min(out.pixels[3 * i + 1], 255);
+                    imageData.data[4 * i + 2] = Math.min(out.pixels[3 * i + 2], 255);
                     imageData.data[4 * i + 3] = 255;
                 }
                 context.putImageData(imageData, 0, 0);
