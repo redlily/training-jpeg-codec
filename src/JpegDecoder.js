@@ -1,5 +1,5 @@
-import * as Common from "./JpegCommon.js";
-import * as Signal from "./JpegSignal.js";
+import {idct} from "./JpegSignal.js";
+import {ycbcrToRgb, reorderZigzagSequence} from "./JpegCommon.js";
 import {JpegReadStream} from "./JpegDataStream.js";
 import {JpegMarker} from "./JpegMarker.js";
 
@@ -18,8 +18,6 @@ const isDebuggingDNL = true;
 const isDebuggingEXP = true;
 const isDebuggingEOI = true;
 
-let aaa = 0;
-
 /**
  * JPEGデコーダ用の例外クラス
  */
@@ -35,7 +33,10 @@ class JpegDecodeError extends Error {
  */
 export class JpegDecoder {
 
-    constructor(buffer, offset) {
+    /**
+     * コンストラクタ
+     */
+    constructor(buffer, offset = undefined, length = undefined) {
         /** データストリーム */
         this._stream = new JpegReadStream(buffer, offset, length);
         /** フーレムのデータ */
@@ -50,7 +51,9 @@ export class JpegDecoder {
         this.out = null;
     }
 
-    /** フレームの開始セグメントの解析 */
+    /**
+     * フレームの開始セグメントの解析
+     */
     _parseSOF(marker) {
         let segment = {};
 
@@ -91,10 +94,6 @@ export class JpegDecoder {
             throw new JpegDecodeError();
         }
 
-        // ユニットの最大数
-        let maxUnitHInMcu = 0;
-        let maxUnitVInMcu = 0;
-
         segment.components = new Array(segment.Nf);
         for (let i = 0; i < segment.Nf; ++i) {
             let component = {};
@@ -104,29 +103,23 @@ export class JpegDecoder {
 
             let H_V = this._stream.readUint8();
 
-            // H_i: 水平方向のサンプリング要素数 (Horizontal sampling factor)
+            // H_i: 水平方向のサンプリング数 (Horizontal sampling factor)
             component.H = 0xf & (H_V >> 4);
 
             if (component.H < 1 || component.H > 4) {
-                // 水平方向のサンプリング要素数が1～4の範囲に収まっていない場合
+                // 水平方向のサンプリング数が1～4の範囲に収まっていない場合
                 throw new JpegDecodeError();
             }
-            if (component.H > maxUnitHInMcu) {
-                maxUnitHInMcu = component.H;
-            }
 
-            // V_i: 垂直方向のサンプリング要素数 (Vertical sampling factor)
+            // V_i: 垂直方向のサンプリング数 (Vertical sampling factor)
             component.V = 0xf & H_V;
 
             if (component.V < 1 || component.V > 4) {
-                // 垂直方向のサンプリング要素数が1～4の範囲に収まっていない場合
+                // 垂直方向のサンプリング数が1～4の範囲に収まっていない場合
                 throw new JpegDecodeError();
             }
-            if (component.V > maxUnitVInMcu) {
-                maxUnitVInMcu = component.V;
-            }
 
-            // Tq_i: 量子化テーブルのセレクター (Quantization table destination selector)
+            // Tq_i: 量子化テーブル出力セレクター (Quantization table destination selector)
             component.Tq = this._stream.readUint8();
             if ((JpegMarker.SOF0 || JpegMarker.SOF1 || JpegMarker.SOF2) && component.Tq > 3) {
                 // 量子化テーブルのセレクターが0-3の範囲に収まっていない場合
@@ -141,83 +134,92 @@ export class JpegDecoder {
             console.log(segment);
         }
 
-        // イメージのサイズ
-        let imageWidth = segment.X;
-        let imageHeight = segment.Y;
+        this._constructFrameInfo(segment);
+        return segment;
+    }
 
-        // MCUに含まれるユニットの最大数
-        let maxUnitsInMcu = maxUnitHInMcu * maxUnitVInMcu;
+    /**
+     * フレーム情報の構築
+     */
+    _constructFrameInfo(segment) {
+        // サンプリング要素数の最大値
+        let maxHorizontalSamplingFactor = 1;
+        let maxVerticalSamplingFactor = 1;
+        for (let i = 0; i < segment.components.length; ++i) {
+            let component = segment.components[i];
 
-        // MCUの寸法
-        let mcuWidth = 8 * maxUnitHInMcu;
-        let mcuHeight = 8 * maxUnitVInMcu;
+            if (maxHorizontalSamplingFactor < component.H) {
+                maxHorizontalSamplingFactor = component.H;
+            }
+            if (maxVerticalSamplingFactor < component.V) {
+                maxVerticalSamplingFactor = component.V;
+            }
+        }
 
-        // イメージに含まれるMCUの個数
-        let numMcuHInImage = Math.ceil(imageWidth / mcuWidth);
-        let numMcuVInImage = Math.ceil(imageHeight / mcuHeight);
-        let numMcusInImage = numMcuHInImage * numMcuVInImage;
-
-        // 各コンポーネントの設定
+        // コンポーネント情報の構築
         let components = new Array(segment.Nf);
         for (let i = 0; i < components.length; ++i) {
             let component = segment.components[i];
 
-            let id = component.C;
-            let numUnitHInMcu = component.H;
-            let numUnitVInMcu = component.V;
-            let numUnitsInMcu = numUnitHInMcu * numUnitVInMcu;
-            let qtSelector = component.Tq;
+            let numHorizontalUnitsInMcu = maxHorizontalSamplingFactor / component.H;
+            let numVerticalUnitsInMcu = maxVerticalSamplingFactor / component.V;
 
-            let blocks = new Array(numMcusInImage * numUnitsInMcu);
-            for (let j = 0; j < blocks.length; ++j) {
-                blocks[j] = new Int16Array(64);
+            let numHorizontalUnitsInComponent = Math.ceil(segment.X / maxHorizontalSamplingFactor / 8) * component.H;
+            let numVerticalUnitsInComponent = Math.ceil(segment.Y / maxVerticalSamplingFactor / 8) * component.V;
+
+            let units = new Array(numHorizontalUnitsInComponent * numVerticalUnitsInComponent)
+            for (let j = 0; j < units.length; ++j) {
+                units[j] = new Int16Array(64);
             }
 
             components[i] = {
                 /** コンポーネントID */
-                id: id,
-                /** 水平方向のMCU内のユニット数 */
-                numUnitHInMcu: numUnitHInMcu,
-                /** 垂直方向のMCU内のユニット数 */
-                numUnitVInMcu: numUnitVInMcu,
-                /** MCU内に含まれるユニットの数 */
-                numUnitsInMcu: numUnitsInMcu,
+                componentId: component.C,
+                /** 水平方向のサンプリング数 */
+                horizontalSamplingFactor: component.H,
+                /** 垂直方向のサンプリング数 */
+                verticalSamplingFactor: component.V,
+                /** サンプリング数 */
+                samplingFactor: component.H * component.V,
+                /** MCU内の水平方向のユニット数 */
+                numHorizontalUnitsInMcu: numHorizontalUnitsInMcu,
+                /** MCU内の垂直方向のユニット数 */
+                numVerticalUnitsInMcu: numVerticalUnitsInMcu,
+                /** MCU内のユニット数 */
+                numUnitsInMcu: numHorizontalUnitsInMcu * numVerticalUnitsInMcu,
+                /** コンポーネント内の水平方向のユニット数 */
+                numHorizontalUnitsInComponent: numHorizontalUnitsInComponent,
+                /** コンポーネント内の垂直方向のユニット数 */
+                numVerticalUnitsInComponent: numVerticalUnitsInComponent,
                 /** 量子化テーブルのセレクター */
-                qtSelector: qtSelector,
-                /** ブロック */
-                blocks: blocks
+                qtSelector: component.Tq,
+                /** ユニット配列 */
+                units: units
             };
         }
 
+        // フレーム情報の構築
+        let numHorizontalMcusInImage = Math.ceil(segment.X / 8 / maxHorizontalSamplingFactor);
+        let numVerticalMcusInImage = Math.ceil(segment.Y / 8 / maxVerticalSamplingFactor);
         this._frame = {
             /** イメージの幅 */
-            width: imageWidth,
+            width: segment.X,
             /** イメージの高さ */
-            height: imageHeight,
-            /** 水平方向のMCUのユニットの最大数 */
-            maxUnitHInMcu: maxUnitHInMcu,
-            /** 垂直方向のMCUのユニットの最大数 */
-            maxUnitVInMcu: maxUnitVInMcu,
-            /** MCU内に含まれるユニットの最大数 */
-            maxUnitsInMcu: maxUnitsInMcu,
-            /** MCUの幅 */
-            mcuWidth: mcuWidth,
-            /** MCUの高さ */
-            mcuHeight: mcuHeight,
-            /** イメージに含まれる水平方向のMCU数 */
-            numMcuHInImage: numMcuHInImage,
-            /** イメージに含まれる垂直方向のMCU数 */
-            numMcuVInImage: numMcuVInImage,
-            /** イメージ内に含まれるMCU数 */
-            numMcusInImage: numMcusInImage,
+            height: segment.Y,
+            /** 画像内の水平方向のMCU数 */
+            numHorizontalMcusInImage: numHorizontalMcusInImage,
+            /** 画像内の垂直方向のMCU数 */
+            numVerticalMcusInImage: numVerticalMcusInImage,
+            /** 画像内のMCU数 */
+            numMcusInImage: numHorizontalMcusInImage * numVerticalMcusInImage,
             /** コンポーネント配列 */
             components: components
         }
-
-        return segment;
     }
 
-    /** スキャン開始セグメントの解析 */
+    /**
+     * スキャン開始セグメントの解析
+     */
     _parseSOS() {
         let segment = {};
 
@@ -235,15 +237,15 @@ export class JpegDecoder {
         for (let j = 0; j < segment.Ns; ++j) {
             let component = {};
 
-            // Csj: スキャンコンポーネントのセレクター (Scan component selector)
+            // Cs_j: スキャンコンポーネントのセレクター (Scan component selector)
             component.Cs = this._stream.readUint8();
 
             let Td_Ta = this._stream.readUint8();
 
-            // Tdj: 直流エントロピーコーディングテーブルのセレクター (DC entropy coding table destination selector)
+            // Td_j: 直流エントロピーコーディングテーブルのセレクター (DC entropy coding table destination selector)
             component.Td = 0xf & (Td_Ta >> 4);
 
-            // Taj: 交流エントロピーコーディングテーブルのセレクター (AC entropy coding table destination selector)
+            // Ta_j: 交流エントロピーコーディングテーブルのセレクター (AC entropy coding table destination selector)
             component.Ta = 0xf & Td_Ta;
 
             segment.components[j] = component;
@@ -268,11 +270,319 @@ export class JpegDecoder {
             console.log(segment);
         }
 
-        this._decodeScanDataByHuffmanCoding(segment);
+        this._decodeScanDataWithHuffmanCoding(segment);
         return segment;
     }
 
-    /** 量子化テーブル定義セグメントの解析 */
+    /**
+     * スキャンデータをハフマン符号化を使用してデコードする。
+     */
+    _decodeScanDataWithHuffmanCoding(segment) {
+        let isDebugging = isDebuggingSOS && isDebuggingSOSDetail;
+
+        let scanWork = {
+            numberOfEndOfBlock: 0,
+            prevDcCoefs: new Float32Array(segment.Ns)
+        }
+
+        if (segment.Ns > 1) {
+            // インターリーブの場合
+            for (let y = 0; y < this._frame.numVerticalMcusInImage; ++y) {
+                for (let x = 0; x < this._frame.numHorizontalMcusInImage; ++x) {
+                    for (let i = 0; i < segment.Ns; ++i) {
+                        let scanComponent = segment.components[i];
+                        let frameComponent = this._frame.components[scanComponent.Cs - 1];
+
+                        let dcHuffmanTree = this._huffmanTrees[0][scanComponent.Td];
+                        let acHuffmanTree = this._huffmanTrees[1][scanComponent.Ta];
+
+                        for (let j = 0; j < frameComponent.samplingFactor; ++j) {
+                            let index = frameComponent.numHorizontalUnitsInComponent * frameComponent.verticalSamplingFactor * y +
+                                frameComponent.horizontalSamplingFactor * x +
+                                frameComponent.numHorizontalUnitsInComponent * Math.floor(j / frameComponent.horizontalSamplingFactor) +
+                                j % frameComponent.horizontalSamplingFactor;
+                            try {
+                                this._decodeUnitWithHuffmanCoding(
+                                    segment,
+                                    scanWork,
+                                    dcHuffmanTree,
+                                    acHuffmanTree,
+                                    i,
+                                    frameComponent.units[index]);
+                            } catch (e) {
+                                throw e;
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // インターリーブでない場合
+            let scanComponent = segment.components[0];
+            let frameComponent = this._frame.components[scanComponent.Cs - 1];
+
+            let dcHuffmanTree = this._huffmanTrees[0][scanComponent.Td];
+            let acHuffmanTree = this._huffmanTrees[1][scanComponent.Ta];
+
+            for (let i = 0; i < frameComponent.units.length; ++i) {
+                this._decodeUnitWithHuffmanCoding(
+                    segment,
+                    scanWork,
+                    dcHuffmanTree,
+                    acHuffmanTree,
+                    0,
+                    frameComponent.units[i]);
+            }
+        }
+
+        this._stream.resetRemainBits();
+        this._decodeImageWithScanData();
+    }
+
+    /**
+     * ユニットデータをハフマン符号化を使用してデコードする。
+     */
+    _decodeUnitWithHuffmanCoding(segment, scanWork, dcHuffmanTree, acHuffmanTree, component, unit) {
+        let isDebugging = isDebuggingSOS && isDebuggingSOSDetail;
+
+        // ブロックの処理のスキップ
+        if (segment.Ah === 0) {
+            // シーケンシャル
+            if (scanWork.numberOfEndOfBlock > 0) {
+                scanWork.numberOfEndOfBlock--;
+                return;
+            }
+        } else {
+            // 逐次近似
+            if (scanWork.numberOfEndOfBlock > 0) {
+                for (let l = segment.Ss; l <= segment.Se; ++l) {
+                    if (unit[l] !== 0) {
+                        unit[l] |= this._stream.readBits(1) << segment.Al;
+                    }
+                }
+                scanWork.numberOfEndOfBlock--;
+                return;
+            }
+        }
+
+        // DC成分のハフマン符号のデコード
+        if (segment.Ss === 0) {
+            if (segment.Ah === 0) {
+                // シーケンシャル
+                let value = this._readValueWithHuffmanCode(dcHuffmanTree);
+                scanWork.prevDcCoefs[component] = (unit[0] = scanWork.prevDcCoefs[component] + (value.value << segment.Al));
+
+                if (isDebugging) {
+                    console.log(
+                        `0, ` +
+                        `huffmanCode=${("0000000000000000" + value.huffmanCode.toString(2))
+                            .slice(-value.numCodeBits - 1)}, ` +
+                        `runLength=${value.runLength}, ` +
+                        `additionalBits=${value.additionalBits}, ` +
+                        `rawValue=${value.rawValue}, ` +
+                        `value=${value.value}`);
+                }
+            } else {
+                // 逐次近似
+                unit[0] |= this._stream.readBits(1) << segment.Al;
+            }
+        }
+
+        // AC成分のハフマン符号のデコード
+        for (let i = Math.max(segment.Ss, 1); i <= segment.Se; ++i) {
+            if (segment.Ah === 0) {
+                // シーケンシャル
+                let value = this._readValueWithHuffmanCode(acHuffmanTree);
+                let debugValue;
+                if (value.additionalBits === 0) {
+                    if (value.runLength < 0xf) {
+                        // EOB0 ～ EOB14 (End Of Block), DCTの係数を今回の係数も含め終端まで係数を0で埋める
+                        let runLength = (1 << value.runLength) + this._stream.readBits(value.runLength);
+                        scanWork.numberOfEndOfBlock = runLength - 1;
+                        while (i <= segment.Se) {
+                            unit[i++] = 0;
+                        }
+                        value = `EOB${value.runLength}`;
+                    } else {
+                        // ZRL (Zero Run Length), DCTの係数を16個を0で埋め、今回の要素も0として、計16要素を0で埋める
+                        for (let j = 0; j < 15 && i <= segment.Se; ++j) {
+                            unit[i++] = 0;
+                        }
+                        unit[i] = 0;
+                        value = "ZRL";
+                    }
+                } else {
+                    // COMPOSITE VALUES, DCTの係数にランレングスの指定の数だけ0で埋め、その後に取り出した値を係数として代入
+                    for (let j = 0; j < value.runLength && i <= segment.Se; ++j) {
+                        unit[i++] = 0;
+                    }
+                    unit[i] = value.value << segment.Al;
+                    debugValue = value.value;
+                }
+
+                if (isDebugging) {
+                    console.log(
+                        `${i}, ` +
+                        `huffmanCode=${("0000000000000000" + value.huffmanCode.toString(2))
+                            .slice(-value.numCodeBits - 1)}, ` +
+                        `runLength=${value.runLength}, ` +
+                        `additionalBits=${value.additionalBits}, ` +
+                        `rawValue=${value.rawValue}, ` +
+                        `value=${debugValue}`);
+                }
+            } else {
+                // 逐次近似
+                let value = this._readValueWithHuffmanCode(acHuffmanTree);
+                if (value.additionalBits === 0) {
+                    if (value.runLength < 0xf) {
+                        // EOB0 ～ EOB14 (End Of Block), DCTの係数を今回の係数も含め終端まで係数を0で埋める
+                        let runLength = (1 << value.runLength) + this._stream.readBits(value.runLength);
+                        scanWork.numberOfEndOfBlock = runLength - 1;
+                        while (i <= segment.Se) {
+                            if (unit[i] !== 0) {
+                                unit[i] |= this._stream.readBits(1) << segment.Al;
+                            }
+                            i++;
+                        }
+                        break;
+                    } else {
+                        // ZRL (Zero Run Length), DCTの係数を16個を0で埋め、今回の要素も0として、計16要素を0で埋める
+                        for (let j = 0; j < 15 && i <= segment.Se;) {
+                            if (unit[i] !== 0) {
+                                unit[i] |= this._stream.readBits(1) << segment.Al;
+                            } else {
+                                j++;
+                            }
+                            i++;
+                        }
+                        while (i <= segment.Se) {
+                            if (unit[i] !== 0) {
+                                unit[i] |= this._stream.readBits(1) << segment.Al;
+                            } else {
+                                break;
+                            }
+                            i++;
+                        }
+                    }
+                } else if (value.additionalBits === 1) {
+                    for (let j = 0; j < value.runLength && i <= segment.Se;) {
+                        if (unit[i] !== 0) {
+                            if (unit[i] > 0) {
+                                unit[i] |= this._stream.readBits(1) << segment.Al;
+                            } else {
+                                unit[i] -= this._stream.readBits(1) << segment.Al;
+                            }
+                        } else {
+                            j++;
+                        }
+                        i++;
+                    }
+                    while (i <= segment.Se) {
+                        if (unit[i] !== 0) {
+                            if (unit[i] > 0) {
+                                unit[i] |= this._stream.readBits(1) << segment.Al;
+                            } else {
+                                unit[i] -= this._stream.readBits(1) << segment.Al;
+                            }
+                        } else {
+                            unit[i] = value.value << segment.Al;
+                            break;
+                        }
+                        i++;
+                    }
+                } else {
+                    throw new JpegDecodeError("This scan had been broken.");
+                }
+            }
+        }
+    }
+
+    /**
+     * スキャンデータを画像にデコードする。
+     */
+    _decodeImageWithScanData() {
+        let width = this._frame.width;
+        let height = this._frame.height;
+
+        let pixels = new Float32Array(width * height * 3);
+        let unit = new Float32Array(64);
+
+        for (let i = 0; i < this._frame.components.length; ++i) {
+            let component = this._frame.components[i];
+            if (component.componentId < 1 || component.componentId > 2) {
+                continue;
+            }
+
+            let quantizationTable = this._quantizationTables[component.qtSelector];
+
+            for (let j = 0; j < component.units.length; ++j) {
+                let xi = 8 * component.numHorizontalUnitsInMcu *
+                    (j % component.numHorizontalUnitsInComponent);
+                let yi = width * 8 * component.numVerticalUnitsInMcu *
+                    Math.floor(j / component.numHorizontalUnitsInComponent);
+
+                if (xi >= width) {
+                    continue;
+                } else if (yi >= pixels.length) {
+                    break;
+                }
+
+                // ジグザグシーケンスの並び戻す
+                reorderZigzagSequence(unit, component.units[j]);
+
+
+                // DC成分標本化
+                unit[0] = unit[0] * quantizationTable[0];
+
+                // AC成分標本化
+                for (let k = 1; k < 64; ++k) {
+                    unit[k] *= quantizationTable[k];
+                }
+
+                // 逆離散コサイン変換
+                idct(8, unit);
+
+                // ユニットをキャンバスに書き込み
+                for (let k = 0; k < component.numUnitsInMcu; ++k) {
+                    let xj = k % component.numHorizontalUnitsInMcu;
+                    let yj = width * Math.floor(k / component.numHorizontalUnitsInMcu);
+
+                    for (let m = 0; m < 64; ++m) {
+                        let xk = xi + xj + component.numHorizontalUnitsInMcu * (m % 8);
+                        let yk = yi + yj + width * component.numVerticalUnitsInMcu * Math.floor(m / 8);
+
+                        if (xk >= width) {
+                            continue;
+                        } else if (yk >= pixels.length) {
+                            break;
+                        }
+
+                        let index = 3 * (xk + yk) + (component.componentId - 1);
+                        pixels[index] = unit[m];
+                    }
+                }
+            }
+        }
+
+        // 色空間変換
+        for (let i = 0; i < pixels.length; i += 3) {
+            ycbcrToRgb(pixels, i, pixels, i);
+        }
+
+        this.out = {
+            width: this._frame.width,
+            height: this._frame.height,
+            pixels: pixels
+        };
+
+        if (this._callback) {
+            this._callback("decodeImage", this.out);
+        }
+    }
+
+    /**
+     * 量子化テーブル定義セグメントの解析
+     */
     _parseDQT() {
         let segment = {};
 
@@ -316,7 +626,7 @@ export class JpegDecoder {
                 }
             }
 
-            Common.reorderZigzagSequence(quantizationTable, table.Q);
+            reorderZigzagSequence(quantizationTable, table.Q);
             this._quantizationTables[table.T] = quantizationTable;
 
             readSize += 65 + 64 * table.P;
@@ -332,7 +642,9 @@ export class JpegDecoder {
         return segment;
     }
 
-    /** ハフマンテーブル定義セグメントの解析 */
+    /**
+     * ハフマンテーブル定義セグメントの解析
+     */
     _parseDHT() {
         let segment = {};
 
@@ -391,6 +703,121 @@ export class JpegDecoder {
         return segment;
     }
 
+    /**
+     * ハフマンテーブルをツリーにデコードする
+     */
+    _decodeHuffmanTables(table) {
+        let isDebugging = isDebuggingDHT && isDebuggingDHTDetail;
+
+        let tree = [];
+        let code = 0;
+        for (let j = 0; j < table.V.length; ++j) {
+            let v = table.V[j];
+            if (v.length === 0) {
+                tree.push({
+                    maxHuffmanCode: 0,
+                    values: null
+                });
+            } else {
+                let values = new Array(v.length);
+                for (let k = 0; k < v.length; ++k) {
+                    let value = v[k];
+                    if (table.Tc === 0) {
+                        // DC成分用
+                        values[k] = {
+                            huffmanCode: code,
+                            runLength: 0,
+                            additionalBits: value,
+                        };
+                        if (isDebugging) {
+                            console.log(
+                                `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
+                                `additionalBits=${value}`);
+                        }
+                    } else if (table.Tc === 1) {
+                        // AC成分用
+                        values[k] = {
+                            huffmanCode: code,
+                            runLength: 0xf & (value >> 4),
+                            additionalBits: 0xf & value,
+                        };
+                        if (isDebugging) {
+                            if (values[k].additionalBits === 0) {
+                                let strValue;
+                                if (value === 0x00) {
+                                    strValue = "EOB or EOB0";
+                                } else if (value => 0x10 && value <= 0xe0) {
+                                    strValue = "EOB" + (value >> 4);
+                                } else if (value === 0xf0) {
+                                    strValue = "ZRL";
+                                }
+                                console.log(
+                                    `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
+                                    `runLength=${values[k].runLength}, ` +
+                                    `additionalBits=${values[k].additionalBits} (${strValue})`);
+                            } else {
+                                console.log(
+                                    `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
+                                    `runLength=${values[k].runLength}, ` +
+                                    `additionalBits=${values[k].additionalBits}`);
+                            }
+                        }
+                    } else {
+                        // 未定義
+                        throw new JpegDecodeError(`Huffman table have been broken at ${k}.`);
+                    }
+                    code++;
+                }
+                tree.push({
+                    maxHuffmanCode: code,
+                    values: values
+                });
+            }
+            code <<= 1;
+        }
+
+        return tree;
+    }
+
+    /**
+     * ハフマン符号化された値を読み込む
+     */
+    _readValueWithHuffmanCode(huffmanTree) {
+        // ハフマンコードを検索
+        let bitsCount = 0;
+        let huffmanCode = this._stream.readBits(1);
+        while (huffmanCode >= huffmanTree[bitsCount].maxHuffmanCode) {
+            huffmanCode = (huffmanCode << 1) | this._stream.readBits(1);
+            bitsCount++;
+            if (bitsCount >= huffmanTree.length) {
+                throw new JpegDecodeError("This huffman table have been broken.");
+            }
+        }
+        let values = huffmanTree[bitsCount].values;
+        if (huffmanCode >= values.maxHuffmanCode || values.length === 0) {
+            throw new JpegDecodeError("Not found huffman code in the table.");
+        }
+
+        // 値を読み込む
+        let rawValue = 0;
+        let value = 0;
+        let element = values[huffmanCode - values[0].huffmanCode];
+        if (element.additionalBits > 0) {
+            rawValue = this._stream.readBits(element.additionalBits);
+            value = rawValue < (1 << (element.additionalBits - 1)) ?
+                ((-1 << element.additionalBits) | rawValue) + 1 : rawValue;
+        }
+
+        return {
+            huffmanCode: huffmanCode,
+            numCodeBits: bitsCount,
+            runLength: element.runLength,
+            additionalBits: element.additionalBits,
+            rawValue: rawValue,
+            value: value
+        };
+    }
+
     /** 算術符号化条件定義セグメントの解析 */
     _parseDAC() {
         let segment = {};
@@ -445,7 +872,9 @@ export class JpegDecoder {
         return segment;
     }
 
-    /** コメントセグメントの解析 */
+    /**
+     * コメントセグメントの解析
+     */
     _parseCOM() {
         let segment = {};
 
@@ -466,7 +895,9 @@ export class JpegDecoder {
         return segment;
     }
 
-    /** アプリケーションデータセグメントの解析 */
+    /**
+     * アプリケーションデータセグメントの解析
+     */
     _parseAPP(marker) {
         let segment = {};
 
@@ -542,435 +973,6 @@ export class JpegDecoder {
     }
 
     /**
-     * ハフマンテーブルをツリーにデコードする
-     */
-    _decodeHuffmanTables(table) {
-        let isDebugging = isDebuggingDHT && isDebuggingDHTDetail;
-
-        let tree = [];
-        let code = 0;
-        for (let j = 0; j < table.V.length; ++j) {
-            let v = table.V[j];
-            if (v.length === 0) {
-                tree.push({
-                    maxHuffmanCode: 0,
-                    values: null
-                });
-            } else {
-                let values = new Array(v.length);
-                for (let k = 0; k < v.length; ++k) {
-                    let value = v[k];
-                    if (table.Tc === 0) {
-                        // DC成分用
-                        values[k] = {
-                            huffmanCode: code,
-                            runLength: 0,
-                            additionalBits: value,
-                        };
-                        if (isDebugging) {
-                            console.log(
-                                `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
-                                `additionalBits=${value}`);
-                        }
-                    } else if (table.Tc === 1) {
-                        // AC成分用
-                        values[k] = {
-                            huffmanCode: code,
-                            runLength: 0xf & (value >> 4),
-                            additionalBits: 0xf & value,
-                        };
-                        if (isDebugging) {
-                            if (values[k].additionalBits === 0) {
-                                let strValue;
-                                if (value === 0x00) {
-                                    strValue = "EOB or EOB0";
-                                } else if (value => 0x10 && value <= 0xe0) {
-                                    strValue = "EOB" + (value >> 4);
-                                } else if (value === 0xf0) {
-                                    strValue = "ZRL";
-                                }
-                                console.log(
-                                    `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
-                                    `runLength=${values[k].runLength}, ` +
-                                    `additionalBits=${values[k].additionalBits} (${strValue})`);
-                            } else {
-                                console.log(
-                                    `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
-                                    `runLength=${values[k].runLength}, ` +
-                                    `additionalBits=${values[k].additionalBits}`);
-                            }
-                        }
-                    } else {
-                        // 未定義
-                        throw new JpegDecodeError();
-                    }
-                    code++;
-                }
-                tree.push({
-                    maxHuffmanCode: code,
-                    values: values
-                });
-            }
-            code <<= 1;
-        }
-
-        return tree;
-    }
-
-    /**
-     * ハフマン符号化された値を読み込む
-     */
-    _readValueWithHuffmanCode(huffmanTree) {
-        // ハフマンコードを検索
-        let bitsCount = 0;
-        let huffmanCode = this._stream.readBits(1);
-        while (huffmanCode >= huffmanTree[bitsCount].maxHuffmanCode) {
-            huffmanCode = (huffmanCode << 1) | this._stream.readBits(1);
-            bitsCount++;
-            if (bitsCount >= huffmanTree.length) {
-                throw new JpegDecodeError("This huffman table have been broken.");
-            }
-        }
-        let values = huffmanTree[bitsCount].values;
-        if (huffmanCode >= values.maxHuffmanCode || values.length === 0) {
-            throw new JpegDecodeError("Not found huffman code in the table.");
-        }
-
-        // 値を読み込む
-        let rawValue = 0;
-        let value = 0;
-        let element = values[huffmanCode - values[0].huffmanCode];
-        if (element.additionalBits > 0) {
-            rawValue = this._stream.readBits(element.additionalBits);
-            value = rawValue < (1 << (element.additionalBits - 1)) ?
-                ((-1 << element.additionalBits) | rawValue) + 1 : rawValue;
-        }
-
-        return {
-            huffmanCode: huffmanCode,
-            numCodeBits: bitsCount,
-            runLength: element.runLength,
-            additionalBits: element.additionalBits,
-            rawValue: rawValue,
-            value: value
-        };
-    }
-
-    /**
-     * スキャンデータをハフマン符号化を使用してデコードする
-     */
-    _decodeScanDataByHuffmanCoding(segment) {
-        let isDebugging = isDebuggingSOS && isDebuggingSOSDetail;
-
-        if (isDebugging) {
-            console.log(`mcuSize=[${this._frame.mcuWidth}, ${this._frame.mcuHeight}]`);
-        }
-
-        let components = segment.components;
-        let huffmanTrees = this._huffmanTrees;
-
-        // スキャンデータのデコード
-        let numberOfEndOfBlocks = 0;
-        let prevDcCoefs = new Float32Array(segment.Ns);
-
-        for (let i = 0; i < this._frame.numMcusInImage; ++i) {
-            for (let j = 0; j < segment.Ns; ++j) {
-                let component = components[j];
-
-                let frameComponent = this._frame.components[component.Cs - 1];
-                let dcHuffmanTree = huffmanTrees[0][component.Td];
-                let acHuffmanTree = huffmanTrees[1][component.Ta];
-
-                for (let k = 0; k < frameComponent.numUnitsInMcu; ++k) {
-                    if (isDebugging) {
-                        console.log(`MCU[${i}] C[${j}, ${k}]`);
-                    }
-
-                    let block = frameComponent.blocks[i * frameComponent.numUnitsInMcu + k];
-
-                    // ブロックの処理のスキップ
-                    if (segment.Ah === 0) {
-                        // シーケンシャル
-                        if (numberOfEndOfBlocks > 0) {
-                            numberOfEndOfBlocks--;
-                            continue;
-                        }
-                    } else {
-                        // 逐次近似
-                        if (numberOfEndOfBlocks > 0) {
-                            for (let l = segment.Ss; l <= segment.Se; ++l) {
-                                if (block[l] !== 0) {
-                                    block[l] |= this._stream.readBits(1) << segment.Al;
-                                }
-                            }
-                            numberOfEndOfBlocks--;
-                            continue;
-                        }
-                    }
-
-                    // DC成分のハフマン符号のデコード
-                    if (segment.Ss === 0) {
-                        if (segment.Ah === 0) {
-                            // シーケンシャル
-                            let value = this._readValueWithHuffmanCode(dcHuffmanTree);
-                            prevDcCoefs[j] = (block[0] = prevDcCoefs[j] + (value.value << segment.Al));
-
-                            if (isDebugging) {
-                                console.log(
-                                    `0, ` +
-                                    `huffmanCode=${("0000000000000000" + value.huffmanCode.toString(2))
-                                        .slice(-value.numCodeBits - 1)}, ` +
-                                    `runLength=${value.runLength}, ` +
-                                    `additionalBits=${value.additionalBits}, ` +
-                                    `rawValue=${value.rawValue}, ` +
-                                    `value=${value.value}`);
-                            }
-                        } else {
-                            // 逐次近似
-                            block[0] |= this._stream.readBits(1) << segment.Al;
-                        }
-                    }
-
-                    // AC成分のハフマン符号のデコード
-                    for (let l = Math.max(segment.Ss, 1); l <= segment.Se; ++l) {
-                        if (segment.Ah === 0) {
-                            // シーケンシャル
-                            let value = this._readValueWithHuffmanCode(acHuffmanTree);
-                            let debugValue;
-                            if (value.additionalBits === 0) {
-                                if (value.runLength < 0xf) {
-                                    // EOB0 ～ EOB14 (End Of Block), DCTの係数を今回の係数も含め終端まで係数を0で埋める
-                                    let runLength = (1 << value.runLength) + this._stream.readBits(value.runLength);
-                                    numberOfEndOfBlocks = runLength - 1;
-                                    while (l <= segment.Se) {
-                                        block[l++] = 0;
-                                    }
-                                    value = `EOB${value.runLength}`;
-                                } else {
-                                    // ZRL (Zero Run Length), DCTの係数を16個を0で埋め、今回の要素も0として、計16要素を0で埋める
-                                    for (let m = 0; m < 15 && l <= segment.Se; ++m) {
-                                        block[l++] = 0;
-                                    }
-                                    block[l] = 0;
-                                    value = "ZRL";
-                                }
-                            } else {
-                                // COMPOSITE VALUES, DCTの係数にランレングスの指定の数だけ0で埋め、その後に取り出した値を係数として代入
-                                for (let m = 0; m < value.runLength && l <= segment.Se; ++m) {
-                                    block[l++] = 0;
-                                }
-                                block[l] = value.value << segment.Al;
-                                debugValue = value.value;
-                            }
-
-                            if (isDebugging) {
-                                console.log(
-                                    `${l}, ` +
-                                    `huffmanCode=${("0000000000000000" + value.huffmanCode.toString(2))
-                                        .slice(-value.numCodeBits - 1)}, ` +
-                                    `runLength=${value.runLength}, ` +
-                                    `additionalBits=${value.additionalBits}, ` +
-                                    `rawValue=${value.rawValue}, ` +
-                                    `value=${debugValue}`);
-                            }
-                        } else {
-                            // 逐次近似
-                            let value = this._readValueWithHuffmanCode(acHuffmanTree);
-                            if (value.additionalBits === 0) {
-                                if (value.runLength < 0xf) {
-                                    // EOB0 ～ EOB14 (End Of Block), DCTの係数を今回の係数も含め終端まで係数を0で埋める
-                                    let runLength = (1 << value.runLength) + this._stream.readBits(value.runLength);
-                                    numberOfEndOfBlocks = runLength - 1;
-                                    while (l <= segment.Se) {
-                                        if (block[l] !== 0) {
-                                            block[l] |= this._stream.readBits(1) << segment.Al;
-                                        }
-                                        l++;
-                                    }
-                                    break;
-                                } else {
-                                    // ZRL (Zero Run Length), DCTの係数を16個を0で埋め、今回の要素も0として、計16要素を0で埋める
-                                    for (let m = 0; m < 15 && l <= segment.Se;) {
-                                        if (block[l] !== 0) {
-                                            block[l] |= this._stream.readBits(1) << segment.Al;
-                                        } else {
-                                            m++;
-                                        }
-                                        l++;
-                                    }
-                                    while (l <= segment.Se) {
-                                        if (block[l] !== 0) {
-                                            block[l] |= this._stream.readBits(1) << segment.Al;
-                                        } else {
-                                            break;
-                                        }
-                                        l++;
-                                    }
-                                }
-                            } else if (value.additionalBits === 1) {
-                                for (let m = 0; m < value.runLength && l <= segment.Se;) {
-                                    if (block[l] !== 0) {
-                                        if (block[l] > 0) {
-                                            block[l] |= this._stream.readBits(1) << segment.Al;
-                                        } else {
-                                            block[l] -= this._stream.readBits(1) << segment.Al;
-                                        }
-                                    } else {
-                                        m++;
-                                    }
-                                    l++;
-                                }
-                                while (l <= segment.Se) {
-                                    if (block[l] !== 0) {
-                                        if (block[l] > 0) {
-                                            block[l] |= this._stream.readBits(1) << segment.Al;
-                                        } else {
-                                            block[l] -= this._stream.readBits(1) << segment.Al;
-                                        }
-                                    } else {
-                                        block[l] = value.value << segment.Al;
-                                        break;
-                                    }
-                                    l++;
-                                }
-                            } else {
-                                throw new JpegDecodeError("This spect had been broken.");
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        this._stream.resetRemainBits();
-
-        if (aaa === 1) {
-            this._decodeImageWithScanData();
-        }
-        aaa++;
-    }
-
-    /**
-     * スキャンデータを画像にデコードする
-     */
-    _decodeImageWithScanData() {
-        let width = this._frame.width;
-        let height = this._frame.height;
-        let pixels = new Uint8ClampedArray(width * height * 3);
-
-        let maxUnitHInMcu = this._frame.maxUnitHInMcu;
-        let maxUnitVInMcu = this._frame.maxUnitVInMcu;
-        let maxUnitsInMcu = this._frame.maxUnitsInMcu;
-        let mcuWidth = this._frame.mcuWidth;
-        let mcuHeight = this._frame.mcuHeight;
-        let numMcuHInImage = this._frame.numMcuHInImage;
-        let numMcusInImage = this._frame.numMcusInImage;
-
-        let components = this._frame.components;
-        let quantizationTables = new Array(components.length);
-        for (let i = 0; i < quantizationTables.length; ++i) {
-            quantizationTables[i] = this._quantizationTables[components[i].qtSelector];
-        }
-
-        let mcuPixels = new Float32Array(mcuWidth * mcuHeight * 3);
-        let matrices = new Array(this._frame.components.length);
-        for (let i = 0; i < matrices.length; ++i) {
-            matrices[i] = new Float32Array(64);
-        }
-
-        for (let i = 0; i < numMcusInImage; ++i) {
-            let x = i % numMcuHInImage;
-            let y = Math.floor(i / numMcuHInImage);
-
-            for (let j = 0; j < components.length; ++j) {
-                let component = components[j];
-                let componentId = component.id;
-
-                let quantizationTable = quantizationTables[j];
-
-                let numUnitH = component.numUnitHInMcu;
-                let numUnitV = component.numUnitVInMcu;
-                let numUnitsInMcu = component.numUnitsInMcu;
-
-                let matrix = matrices[j];
-
-                for (let k = 0; k < numUnitsInMcu; ++k) {
-                    let block = component.blocks[i * numUnitsInMcu + k];
-
-                    // ジグザグシーケンスの並び戻す
-                    Common.reorderZigzagSequence(matrix, block);
-
-                    // DC成分の処理
-                    matrix[0] = matrix[0] * quantizationTable[0];
-
-                    // AC成分の処理
-                    for (let l = 1; l < 64; ++l) {
-                        matrix[l] *= quantizationTable[l];
-                    }
-
-                    // 逆離散コサイン変換を行う
-                    Signal.idct(8, matrix);
-
-                    // ユニットの内容をMCU単位の画像に書き込む
-                    if (componentId >= 1 && componentId <= 3) {
-                        let startIndex =
-                            3 * (
-                                (mcuWidth * ((k / numUnitH) | 0) << 3) +
-                                ((k % numUnitH) << 3)
-                            ) + componentId - 1;
-                        for (let l = 0; l < 64; ++l) {
-                            let h = l >> 3;
-                            let v = l & 0x7;
-                            let value = matrix[(v << 3) + h];
-                            let currentIndex =
-                                startIndex +
-                                3 * (
-                                    mcuWidth * v * maxUnitVInMcu / numUnitV +
-                                    h * maxUnitHInMcu / numUnitH
-                                );
-                            for (let m = 0, mEnd = maxUnitsInMcu / numUnitsInMcu; m < mEnd; ++m) {
-                                let elementIndex =
-                                    currentIndex +
-                                    3 * (
-                                        mcuWidth * ((m / (maxUnitHInMcu / numUnitH)) | 0) +
-                                        m % (maxUnitHInMcu / numUnitH)
-                                    );
-                                mcuPixels[elementIndex] = value;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // MCU単位の画像をYCbCrからRGBに変換
-            for (let j = 0; j < mcuWidth * mcuHeight; ++j) {
-                Common.convertYcbcrToRgb(mcuPixels, 3 * j, mcuPixels, 3 * j);
-            }
-
-            // MCU単位の画像を出力画像に書き込み
-            for (let v = 0; v < mcuHeight && mcuHeight * y + v < height; ++v) {
-                for (let h = 0; h < mcuWidth && mcuWidth * x + h < width; ++h) {
-                    let mcuIndex = 3 * (mcuWidth * v + h);
-                    let imageIndex = 3 * (width * (mcuHeight * y + v) + (mcuWidth * x + h));
-                    pixels[imageIndex] = mcuPixels[mcuIndex];
-                    pixels[imageIndex + 1] = mcuPixels[mcuIndex + 1];
-                    pixels[imageIndex + 2] = mcuPixels[mcuIndex + 2];
-                }
-            }
-        }
-
-        this.out = {
-            width: width,
-            height: height,
-            pixels: pixels
-        };
-
-        if (this._callback) {
-            this._callback("decodeImage", this.out);
-        }
-    }
-
-    /**
      * JPEGのデコードを行う
      */
     decode(callback) {
@@ -998,7 +1000,6 @@ export class JpegDecoder {
 
                 // SOF3: 可逆圧縮 (シーケンシャル)、ハフマン符号 (Lossless (sequential), Huffman coding)
                 case JpegMarker.SOF3:
-                    throw new JpegDecodeError(`Unsupported SOF marker: ${marker.toString(16)}`);
 
                 // SOFマーカー (非対応)
 
@@ -1008,7 +1009,6 @@ export class JpegDecoder {
                 case JpegMarker.SOF10:
                 // SOF11: 可逆圧縮、算術符号 (Lossless (sequential), arithmetic coding)
                 case JpegMarker.SOF11:
-                    throw new JpegDecodeError(`Unsupported SOF marker: ${marker.toString(16)}`);
 
                 // 拡張用SOF
 
@@ -1024,19 +1024,19 @@ export class JpegDecoder {
                 case JpegMarker.SOF14:
                 // Differential lossless (sequential)
                 case JpegMarker.SOF15:
-                    throw new JpegDecodeError(`Unsupported Expansion SOF marker: ${marker.toString(16)}`);
+                    throw new JpegDecodeError(`Unsupported SOF${marker - JpegMarker.SOF0} marker`);
 
                 // SOS: Start of scan marker
                 case JpegMarker.SOS:
                     this._parseSOS();
                     break;
 
-                // DQT: Define quantization table marker
+                // DQT: 量子化テーブル (Define quantization table marker)
                 case JpegMarker.DQT:
                     this._parseDQT();
                     break;
 
-                // DHT: Define Huffman table marker
+                // DHT: ハフマンテーブル (Define Huffman table marker)
                 case JpegMarker.DHT:
                     this._parseDHT();
                     break;
@@ -1046,7 +1046,7 @@ export class JpegDecoder {
                     this._parseDAC();
                     break;
 
-                // DRI: Define restart interval marker
+                // DRI: リスタートマーカー (Define restart interval marker)
                 case JpegMarker.DRI:
                     this._parseDRI();
                     break;

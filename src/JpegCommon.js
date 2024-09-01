@@ -1,11 +1,11 @@
 /**
  * RGBをYCbCrに変換する
  */
-export function convertRgbToYcbcr(dst, dstOff, src, srcOff, stride = 3, count = 0) {
-    let r = src[srcOff + 0];
+export function rgbToYcbcr(dst, dstOff, src, srcOff, stride = 3, count = 0) {
+    let r = src[srcOff];
     let g = src[srcOff + 1];
     let b = src[srcOff + 2];
-    dst[dstOff + 0] = 0.299 * r + 0.587 * g + 0.114 * b; // Y
+    dst[dstOff] = 0.299 * r + 0.587 * g + 0.114 * b; // Y
     dst[dstOff + 1] = -0.1687 * r - 0.3313 * g + 0.5 * b + 128; // Cb
     dst[dstOff + 2] = 0.5 * r - 0.4187 * g - 0.0813 * b + 128; // Cr
 }
@@ -13,11 +13,11 @@ export function convertRgbToYcbcr(dst, dstOff, src, srcOff, stride = 3, count = 
 /**
  * YCbCrをRGBに変換する
  */
-export function convertYcbcrToRgb(dst, dstOff, src, srcOff) {
-    let y = src[srcOff + 0] + 128;
+export function ycbcrToRgb(dst, dstOff, src, srcOff) {
+    let y = src[srcOff] + 128;
     let cb = src[srcOff + 1] + 128;
     let cr = src[srcOff + 2] + 128;
-    dst[dstOff + 0] = y + 1.402 * (cr - 128); // R
+    dst[dstOff] = y + 1.402 * (cr - 128); // R
     dst[dstOff + 1] = y - 0.34414 * (cb - 128) - 0.71414 * (cr - 128); // G
     dst[dstOff + 2] = y + 1.772 * (cb - 128); // B
 }

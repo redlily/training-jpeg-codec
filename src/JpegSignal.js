@@ -75,10 +75,8 @@ function swapElements2d(n, x) {
 /**
  * 8*8の正方行列の高速離散コサイン変換
  * 中身はJPEG用に調整したB.G.Lee型の高速DCTタイプII
- * @param {float[]} n 正方行列の一辺の要素数
- * @param {uint} x n*nの正方行列
  */
-export function dct(n, x = 8) {
+export function dct(n, x) {
     let nl = log2ui(n);
     let nn = n << nl;
 
@@ -161,10 +159,8 @@ export function dct(n, x = 8) {
 /**
  * 8*8正方行列の高速逆離散コサイン変換
  * 中身はJPEG用に調整したB.G.Lee型の高速DCTタイプIII
- * @param n 正方行列の一辺の要素数
- * @param x n*nの正方行列
  */
-export function idct(n, x = 8) {
+export function idct(n, x) {
     let nl = log2ui(n);
     let nn = n << nl;
 

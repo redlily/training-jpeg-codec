@@ -24,7 +24,7 @@ export class JpegReadStream {
     /**
      * コンストラクタ
      */
-    constructor(buffer, offset = 0, length = null) {
+    constructor(buffer, offset = undefined, length = undefined) {
         this._view = new DataView(buffer, offset, length);
         this._off = 0;
         this._remainBits = 0;
