@@ -83,7 +83,7 @@ RGBからYCbCrに変換
 
 [画像]
 
-```Math
+```math
 \begin{aligned}
 Y &= 0.299 R + 0.587 G + 0.114 B \\
 Cb &= - 0.1687 R - 0.3313 G + 0.5 B + 128 \\
@@ -106,7 +106,7 @@ YCbCrからRGBに変換
 
 [画像]
 
-```Math
+```math
 \begin{aligned}
 R &= Y + 1.402 (Cr - 128) \\
 G &= Y - 0.34414 (Cb - 128) - 0.71414 (Cr - 128) \\
