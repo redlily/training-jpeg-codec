@@ -156,16 +156,28 @@ export class JpegDecoder {
             }
         }
 
+        let widthMcu = maxHorizontalSamplingFactor * 8;
+        let heightMcu = maxVerticalSamplingFactor * 8;
+
+        let width = segment.X;
+        let height = segment.Y;
+
+        let numHorizontalMcusInImage = Math.ceil(width / widthMcu);
+        let numVerticalMcusInImage = Math.ceil(height / heightMcu);
+
         // コンポーネント情報の構築
         let components = new Array(segment.Nf);
         for (let i = 0; i < components.length; ++i) {
             let component = segment.components[i];
 
-            let numHorizontalUnitsInMcu = maxHorizontalSamplingFactor / component.H;
-            let numVerticalUnitsInMcu = maxVerticalSamplingFactor / component.V;
+            let widthUnitInMcu = maxHorizontalSamplingFactor / component.H;
+            let heightUnitInMcu = maxVerticalSamplingFactor / component.V;
 
-            let numHorizontalUnitsInComponent = Math.ceil(segment.X / maxHorizontalSamplingFactor / 8) * component.H;
-            let numVerticalUnitsInComponent = Math.ceil(segment.Y / maxVerticalSamplingFactor / 8) * component.V;
+            let numHorizontalUnitsInComponent = numHorizontalMcusInImage * component.H;
+            let numVerticalUnitsInComponent = numVerticalMcusInImage * component.V;
+
+            let numHorizontalUnitsInComponentWithoutMcu = Math.ceil(width * component.H / maxHorizontalSamplingFactor / 8);
+            let numVerticalUnitsInComponentWithoutMcu = Math.ceil(height * component.V / maxVerticalSamplingFactor / 8);
 
             let units = new Array(numHorizontalUnitsInComponent * numVerticalUnitsInComponent)
             for (let j = 0; j < units.length; ++j) {
@@ -175,37 +187,47 @@ export class JpegDecoder {
             components[i] = {
                 /** コンポーネントID */
                 componentId: component.C,
+
                 /** 水平方向のサンプリング数 */
                 horizontalSamplingFactor: component.H,
                 /** 垂直方向のサンプリング数 */
                 verticalSamplingFactor: component.V,
                 /** サンプリング数 */
                 samplingFactor: component.H * component.V,
-                /** MCU内の水平方向のユニット数 */
-                numHorizontalUnitsInMcu: numHorizontalUnitsInMcu,
-                /** MCU内の垂直方向のユニット数 */
-                numVerticalUnitsInMcu: numVerticalUnitsInMcu,
-                /** MCU内のユニット数 */
-                numUnitsInMcu: numHorizontalUnitsInMcu * numVerticalUnitsInMcu,
+
+                /** MCU内でのユニット幅 */
+                widthUnitInMcu: widthUnitInMcu,
+                /** MCU内でのユニット高さ */
+                heightUnitInMcu: heightUnitInMcu,
+                /** MCU内でのユニットサイズ */
+                sizeUnitInMcu: widthUnitInMcu * heightUnitInMcu,
+
                 /** コンポーネント内の水平方向のユニット数 */
                 numHorizontalUnitsInComponent: numHorizontalUnitsInComponent,
                 /** コンポーネント内の垂直方向のユニット数 */
                 numVerticalUnitsInComponent: numVerticalUnitsInComponent,
+
+                /** コンポーネント内の水平方向の制約なしのユニット数、非インターリーブ用 */
+                numHorizontalUnitsInComponentWithoutMcu: numHorizontalUnitsInComponentWithoutMcu,
+                /** コンポーネント内のMCU制約なしの水平方向のユニット数、非インターリーブ用 */
+                numVerticalUnitsInComponentWithoutMcu: numVerticalUnitsInComponentWithoutMcu,
+                /** コンポーネント内のMCUの制約なしのユニット数、非インターリーブ用 */
+                numUnitsInComponentWithoutMcu: numHorizontalUnitsInComponentWithoutMcu * numVerticalUnitsInComponentWithoutMcu,
+
                 /** 量子化テーブルのセレクター */
                 qtSelector: component.Tq,
+
                 /** ユニット配列 */
                 units: units
             };
         }
 
         // フレーム情報の構築
-        let numHorizontalMcusInImage = Math.ceil(segment.X / 8 / maxHorizontalSamplingFactor);
-        let numVerticalMcusInImage = Math.ceil(segment.Y / 8 / maxVerticalSamplingFactor);
         this._frame = {
             /** イメージの幅 */
-            width: segment.X,
+            width: width,
             /** イメージの高さ */
-            height: segment.Y,
+            height: height,
             /** 画像内の水平方向のMCU数 */
             numHorizontalMcusInImage: numHorizontalMcusInImage,
             /** 画像内の垂直方向のMCU数 */
@@ -324,7 +346,13 @@ export class JpegDecoder {
             let dcHuffmanTree = this._huffmanTrees[0][scanComponent.Td];
             let acHuffmanTree = this._huffmanTrees[1][scanComponent.Ta];
 
-            for (let i = 0; i < frameComponent.units.length; ++i) {
+            for (let i = 0;
+                 i < frameComponent.numHorizontalUnitsInComponent * frameComponent.numVerticalUnitsInComponentWithoutMcu;
+                 ++i) {
+                if (i % frameComponent.numHorizontalUnitsInComponent >
+                    frameComponent.numHorizontalUnitsInComponentWithoutMcu) {
+                    continue;
+                }
                 this._decodeUnitWithHuffmanCoding(
                     segment,
                     scanWork,
@@ -370,13 +398,16 @@ export class JpegDecoder {
             if (segment.Ah === 0) {
                 // シーケンシャル
                 let value = this._readValueWithHuffmanCode(dcHuffmanTree);
+                if (unit === undefined) {
+                    console.log("")
+                }
                 scanWork.prevDcCoefs[component] = (unit[0] = scanWork.prevDcCoefs[component] + (value.value << segment.Al));
 
                 if (isDebugging) {
                     console.log(
                         `0, ` +
                         `huffmanCode=${("0000000000000000" + value.huffmanCode.toString(2))
-                            .slice(-value.numCodeBits - 1)}, ` +
+                            .slice(-value.numCodingBits - 1)}, ` +
                         `runLength=${value.runLength}, ` +
                         `additionalBits=${value.additionalBits}, ` +
                         `rawValue=${value.rawValue}, ` +
@@ -424,7 +455,7 @@ export class JpegDecoder {
                     console.log(
                         `${i}, ` +
                         `huffmanCode=${("0000000000000000" + value.huffmanCode.toString(2))
-                            .slice(-value.numCodeBits - 1)}, ` +
+                            .slice(-value.numCodingBits - 1)}, ` +
                         `runLength=${value.runLength}, ` +
                         `additionalBits=${value.additionalBits}, ` +
                         `rawValue=${value.rawValue}, ` +
@@ -516,9 +547,9 @@ export class JpegDecoder {
             let quantizationTable = this._quantizationTables[component.qtSelector];
 
             for (let j = 0; j < component.units.length; ++j) {
-                let xi = 8 * component.numHorizontalUnitsInMcu *
+                let xi = 8 * component.widthUnitInMcu *
                     (j % component.numHorizontalUnitsInComponent);
-                let yi = width * 8 * component.numVerticalUnitsInMcu *
+                let yi = width * 8 * component.heightUnitInMcu *
                     Math.floor(j / component.numHorizontalUnitsInComponent);
 
                 if (xi >= width) {
@@ -539,13 +570,13 @@ export class JpegDecoder {
                 idct(8, unit);
 
                 // ユニットをキャンバスに書き込み
-                for (let k = 0; k < component.numUnitsInMcu; ++k) {
-                    let xj = k % component.numHorizontalUnitsInMcu;
-                    let yj = width * Math.floor(k / component.numHorizontalUnitsInMcu);
+                for (let k = 0; k < component.sizeUnitInMcu; ++k) {
+                    let xj = k % component.widthUnitInMcu;
+                    let yj = width * Math.floor(k / component.heightUnitInMcu);
 
                     for (let m = 0; m < 64; ++m) {
-                        let xk = xi + xj + component.numHorizontalUnitsInMcu * (m % 8);
-                        let yk = yi + yj + width * component.numVerticalUnitsInMcu * Math.floor(m / 8);
+                        let xk = xi + xj + component.widthUnitInMcu * (m % 8);
+                        let yk = yi + yj + width * component.heightUnitInMcu * Math.floor(m / 8);
 
                         if (xk >= width) {
                             continue;
@@ -642,6 +673,8 @@ export class JpegDecoder {
      * ハフマンテーブル定義セグメントの解析
      */
     _parseDHT() {
+        let isDebugging = isDebuggingDHT && isDebuggingDHTDetail;
+
         let segment = {};
 
         // Lh: ハフマンテーブル定義長 (Huffman table definition length)
@@ -687,16 +720,30 @@ export class JpegDecoder {
             segment.tables.push(table);
         }
 
-        for (let table of segment.tables) {
-            this._huffmanTrees[table.Tc][table.Th] = this._decodeHuffmanTables(table);
-        }
-
         if (isDebuggingDHT) {
             console.log("DHT");
             console.log(segment);
         }
 
+        // テーブルをより扱いやすい
+        for (let i = 0; i < segment.tables.length; ++i) {
+            let table = segment.tables[i];
+            if (isDebugging) {
+                console.log(`Struct a table ${i}`);
+            }
+            this._huffmanTrees[table.Tc][table.Th] = this._decodeHuffmanTables(table);
+        }
+
         return segment;
+    }
+
+    _minBitsNeeded(value) {
+        let bits = 0;
+        while (value > 0) {
+            value = value >> 1;
+            bits++;
+        }
+        return bits;
     }
 
     /**
@@ -709,66 +756,59 @@ export class JpegDecoder {
         let code = 0;
         for (let j = 0; j < table.V.length; ++j) {
             let v = table.V[j];
-            if (v.length === 0) {
-                tree.push({
-                    maxHuffmanCode: 0,
-                    values: null
-                });
-            } else {
-                let values = new Array(v.length);
-                for (let k = 0; k < v.length; ++k) {
-                    let value = v[k];
-                    if (table.Tc === 0) {
-                        // DC成分用
-                        values[k] = {
-                            huffmanCode: code,
-                            runLength: 0,
-                            additionalBits: value,
-                        };
-                        if (isDebugging) {
-                            console.log(
-                                `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
-                                `additionalBits=${value}`);
-                        }
-                    } else if (table.Tc === 1) {
-                        // AC成分用
-                        values[k] = {
-                            huffmanCode: code,
-                            runLength: 0xf & (value >> 4),
-                            additionalBits: 0xf & value,
-                        };
-                        if (isDebugging) {
-                            if (values[k].additionalBits === 0) {
-                                let strValue;
-                                if (value === 0x00) {
-                                    strValue = "EOB or EOB0";
-                                } else if (value => 0x10 && value <= 0xe0) {
-                                    strValue = "EOB" + (value >> 4);
-                                } else if (value === 0xf0) {
-                                    strValue = "ZRL";
-                                }
-                                console.log(
-                                    `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
-                                    `runLength=${values[k].runLength}, ` +
-                                    `additionalBits=${values[k].additionalBits} (${strValue})`);
-                            } else {
-                                console.log(
-                                    `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
-                                    `runLength=${values[k].runLength}, ` +
-                                    `additionalBits=${values[k].additionalBits}`);
-                            }
-                        }
-                    } else {
-                        // 未定義
-                        throw new JpegDecodeError(`Huffman table have been broken at ${k}.`);
+            let values = new Array(v.length);
+            for (let k = 0; k < v.length; ++k) {
+                let value = v[k];
+                if (table.Tc === 0) {
+                    // DC成分用
+                    values[k] = {
+                        huffmanCode: code,
+                        runLength: 0,
+                        additionalBits: value,
+                    };
+                    if (isDebugging) {
+                        console.log(
+                            `bits=${j + 1}, ` +
+                            `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
+                            `additionalBits=${value}`);
                     }
-                    code++;
+                } else if (table.Tc === 1) {
+                    // AC成分用
+                    values[k] = {
+                        huffmanCode: code,
+                        runLength: 0xf & (value >> 4),
+                        additionalBits: 0xf & value,
+                    };
+                    if (isDebugging) {
+                        if (values[k].additionalBits === 0) {
+                            let strValue;
+                            if (value === 0x00) {
+                                strValue = "EOB or EOB0";
+                            } else if (value => 0x10 && value <= 0xe0) {
+                                strValue = "EOB" + (value >> 4);
+                            } else if (value === 0xf0) {
+                                strValue = "ZRL";
+                            }
+                            console.log(
+                                `bits=${j + 1}, ` +
+                                `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
+                                `runLength=${values[k].runLength}, ` +
+                                `additionalBits=${values[k].additionalBits} (${strValue})`);
+                        } else {
+                            console.log(
+                                `bits=${j + 1} ` +
+                                `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
+                                `runLength=${values[k].runLength}, ` +
+                                `additionalBits=${values[k].additionalBits}`);
+                        }
+                    }
+                } else {
+                    // 未定義
+                    throw new JpegDecodeError(`Huffman table have been broken at ${k}.`);
                 }
-                tree.push({
-                    maxHuffmanCode: code,
-                    values: values
-                });
+                code++;
             }
+            tree.push(values);
             code <<= 1;
         }
 
@@ -780,24 +820,25 @@ export class JpegDecoder {
      */
     _readValueWithHuffmanCode(huffmanTree) {
         // ハフマンコードを検索
-        let bitsCount = 0;
-        let huffmanCode = this._stream.readBits(1);
-        while (huffmanCode >= huffmanTree[bitsCount].maxHuffmanCode) {
+        let element = null;
+        let huffmanCode = 0;
+        let rowIndex = 0;
+        searchElement: for (; rowIndex < huffmanTree.length; ++rowIndex) {
             huffmanCode = (huffmanCode << 1) | this._stream.readBits(1);
-            bitsCount++;
-            if (bitsCount >= huffmanTree.length) {
-                throw new JpegDecodeError("This huffman table have been broken.");
+            for (let i = 0; i < huffmanTree[rowIndex].length; ++i) {
+                if (huffmanTree[rowIndex][i].huffmanCode === huffmanCode) {
+                    element = huffmanTree[rowIndex][i];
+                    break searchElement;
+                }
             }
         }
-        let values = huffmanTree[bitsCount].values;
-        if (huffmanCode >= values.maxHuffmanCode || values.length === 0) {
+        if (element === null) {
             throw new JpegDecodeError("Not found huffman code in the table.");
         }
 
         // 値を読み込む
         let rawValue = 0;
         let value = 0;
-        let element = values[huffmanCode - values[0].huffmanCode];
         if (element.additionalBits > 0) {
             rawValue = this._stream.readBits(element.additionalBits);
             value = rawValue < (1 << (element.additionalBits - 1)) ?
@@ -806,7 +847,7 @@ export class JpegDecoder {
 
         return {
             huffmanCode: huffmanCode,
-            numCodeBits: bitsCount,
+            numCodingBits: rowIndex + 1,
             runLength: element.runLength,
             additionalBits: element.additionalBits,
             rawValue: rawValue,
