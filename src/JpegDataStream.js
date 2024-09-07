@@ -84,14 +84,18 @@ export class JpegReadStream {
         return value;
     }
 
-    /** マーカーを読み込む */
+    /**
+     * マーカーを読み込む
+     */
     readMaker() {
         let value = this._view.getUint16(this._off);
         this._off += 2;
         return value;
     }
 
-    /** 符号なしの8bitの整数の配列を読み込む */
+    /**
+     * 符号なしの8bitの整数の配列を読み込む
+     */
     readUint8Array(dst, off, len) {
         len = Math.min(len, this._view.byteLength - this._off);
         for (let i = 0; i < len; ++i) {
@@ -101,7 +105,9 @@ export class JpegReadStream {
         return len;
     }
 
-    /** 指定ビット数のデータを読み込む */
+    /**
+     * 指定数のビット配列を読み込む
+     */
     readBits(num) {
         // 0bitの場合
         if (num === 0) {
@@ -122,24 +128,12 @@ export class JpegReadStream {
         this._remainBits = 0;
         this._remainBitsCount = 0;
         while (num >= 8) {
-            let bits = this.readUint8();
-            if (bits === 0xff) {
-                let next = this.readUint8();
-                if (next !== 0) {
-                    throw new JpegDataStreamError("This data stream has been broken.");
-                }
-            }
+            let bits = this._readUnit8ForReadingBits();
             result = (result << 8) | bits;
             num -= 8;
         }
         if (num > 0) {
-            this._remainBits = this.readUint8();
-            if (this._remainBits === 0xff) {
-                let next = this.readUint8();
-                if (next !== 0) {
-                    throw new JpegDataStreamError("This data stream has been broken.");
-                }
-            }
+            this._remainBits = this._readUnit8ForReadingBits();
             this._remainBitsCount = 8 - num;
             result = (result << num) | (this._remainBits >>> this._remainBitsCount);
             this._remainBits &= 0xff >>> (8 - this._remainBitsCount);
@@ -147,7 +141,24 @@ export class JpegReadStream {
         return result;
     }
 
-    /** 内部の未出力のビット配列のステータスをリセットする */
+    /**
+     * ビットストリーム用に符号なし8bitの整数を読み込み
+     */
+    _readUnit8ForReadingBits() {
+        let bits = this.readUint8();
+        if (bits === 0xff) {
+            // ビットストリームは読み込んだバイトの値が FF の場合は 00 である必要がある
+            let next = this.readUint8();
+            if (next !== 0) {
+                throw new JpegDataStreamError("This data stream has been broken.");
+            }
+        }
+        return bits;
+    }
+
+    /**
+     * 内部で保留しているビット配列を破棄する
+     */
     resetRemainBits() {
         this._remainBits = 0;
         this._remainBitsCount = 0;

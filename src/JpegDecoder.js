@@ -392,7 +392,7 @@ export class JpegDecoder {
         // DC成分のハフマン符号のデコード
         if (segment.Ss === 0) {
             if (segment.Ah === 0) {
-                // シーケンシャル
+                // シーケンシャル、逐次近似または最初の読み込み
                 let value = this._readValueWithHuffmanCode(dcHuffmanTree);
                 scanWork.prevDcCoefs[component] = (unit[0] = scanWork.prevDcCoefs[component] + (value.value << segment.Al));
 
@@ -408,6 +408,7 @@ export class JpegDecoder {
                 }
             } else {
                 // 逐次近似
+                // スタート以降は1ビットずつの読み込み
                 unit[0] |= this._stream.readBits(1) << segment.Al;
             }
         }
@@ -415,7 +416,7 @@ export class JpegDecoder {
         // AC成分のハフマン符号のデコード
         for (let i = Math.max(segment.Ss, 1); i <= segment.Se; ++i) {
             if (segment.Ah === 0) {
-                // シーケンシャル
+                // シーケンシャルはたは逐次近似の最初の読み込み
                 let value = this._readValueWithHuffmanCode(acHuffmanTree);
                 let debugValue;
                 if (value.additionalBits === 0) {
@@ -456,6 +457,7 @@ export class JpegDecoder {
                 }
             } else {
                 // 逐次近似
+                // スタート以降は1ビットずつの読み込み
                 let value = this._readValueWithHuffmanCode(acHuffmanTree);
                 if (value.additionalBits === 0) {
                     if (value.runLength < 0xf) {
@@ -545,6 +547,7 @@ export class JpegDecoder {
                 let yi = width * 8 * component.heightUnitInMcu *
                     Math.floor(j / component.numHorizontalUnitsInComponent);
 
+                // 境界面処理
                 if (xi >= width) {
                     continue;
                 } else if (yi >= pixels.length) {
@@ -571,6 +574,7 @@ export class JpegDecoder {
                         let xk = xi + xj + component.widthUnitInMcu * (m % 8);
                         let yk = yi + yj + width * component.heightUnitInMcu * Math.floor(m / 8);
 
+                        // 境界面処理
                         if (xk >= width) {
                             continue;
                         } else if (yk >= pixels.length) {
