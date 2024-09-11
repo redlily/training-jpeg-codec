@@ -1,7 +1,7 @@
 /**
  * RGBをYCbCrに変換する
  */
-export function rgbToYcbcr(dst, dstOff, src, srcOff, stride = 3, count = 0) {
+export function rgbToYcbcr(dst, dstOff, src, srcOff) {
     let r = src[srcOff];
     let g = src[srcOff + 1];
     let b = src[srcOff + 2];
