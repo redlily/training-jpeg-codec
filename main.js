@@ -1,6 +1,7 @@
-import * as Decoder from "./src/JpegDecoder.js"
+import * as Decoder from "./src/JpegDecoder.js";
 import {ycbcrToRgb, rgbToYcbcr, reorderZigzagSequence} from "./src/JpegCommon.js";
-import {dct} from "./src/JpegSignal.js"
+import {dct, idct} from "./src/JpegSignal.js";
+import {dct2D, idct2D} from "./src/signal.js";
 
 let uploadFile;
 let previousCanvas = null;
@@ -85,6 +86,25 @@ function grayToHeatmap(v) {
 }
 
 onload = () => {
+    let vvv = new Float32Array(64);
+    let fff = new Float32Array(64);
+    for (let i = 0; i < 64; ++i) {
+        vvv[i] = Math.random()
+    }
+
+    let s = performance.now();
+    for (let i = 0; i < 100000; ++i) {
+        dct2D(8, vvv, fff);
+    }
+    console.log(`${performance.now() - s}`)
+
+    s = performance.now();
+    for (let i = 0; i < 100000; ++i) {
+        dct(8, vvv);
+    }
+    console.log(`${performance.now() - s}`)
+
+
     uploadFile = document.getElementById("uploadFile");
     uploadFile.addEventListener("change", onUploadImage);
 
@@ -165,7 +185,7 @@ onload = () => {
         context.putImageData(outputData, 0, 0);
         document.body.append(canvas);
     }
-    img.src = "./assets/work/aaa.jpeg";
+    img.src = "./assets/work/aaa.png";
 
 }
 

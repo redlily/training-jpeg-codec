@@ -22,8 +22,7 @@ function dctIII(x, N) {
     return X;
 }
 
-function dct2D(N, s) {
-    //const S = new Float32Array(N * N);
+export function dct2D(N, s, S) {
     for (let u = 0; u < N; u++) {
         for (let v = 0; v < N; v++) {
             let sum = 0;
@@ -43,8 +42,7 @@ function dct2D(N, s) {
     return S;
 }
 
-function idct2D(N, S) {
-    //const s = new Float32Array(N * N);
+export function idct2D(N, S, s) {
     for (let x = 0; x < N; x++) {
         for (let y = 0; y < N; y++) {
             let sum = 0;
