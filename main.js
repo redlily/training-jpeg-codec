@@ -19,7 +19,7 @@ function rgbToCmyk(r, g, b) {
 
     // すべてが0の場合（完全な黒）なら、C, M, Yも0にする
     if (k === 1) {
-        return { c: 0, m: 0, y: 0, k: 100 };
+        return {c: 0, m: 0, y: 0, k: 100};
     }
 
     // C（シアン）, M（マゼンタ）, Y（イエロー）の計算
@@ -85,26 +85,18 @@ function grayToHeatmap(v) {
     return [r * 255, g * 255, b * 255];  // RGBA
 }
 
+let qt = [
+    9, 6, 5, 9, 13, 22, 28, 33,
+    6, 6, 8, 10, 14, 31, 32, 30,
+    8, 7, 9, 13, 22, 31, 37, 30,
+    8, 9, 12, 16, 28, 47, 43, 33,
+    10, 12, 20, 30, 37, 59, 56, 42,
+    13, 19, 30, 35, 44, 56, 61, 50,
+    26, 35, 42, 47, 56, 65, 65, 55,
+    39, 50, 51, 53, 60, 54, 56, 53
+];
+
 onload = () => {
-    let vvv = new Float32Array(64);
-    let fff = new Float32Array(64);
-    for (let i = 0; i < 64; ++i) {
-        vvv[i] = Math.random()
-    }
-
-    let s = performance.now();
-    for (let i = 0; i < 100000; ++i) {
-        dct2D(8, vvv, fff);
-    }
-    console.log(`${performance.now() - s}`)
-
-    s = performance.now();
-    for (let i = 0; i < 100000; ++i) {
-        dct(8, vvv);
-    }
-    console.log(`${performance.now() - s}`)
-
-
     uploadFile = document.getElementById("uploadFile");
     uploadFile.addEventListener("change", onUploadImage);
 
@@ -132,8 +124,8 @@ onload = () => {
                 pixels[3 * (x + img.width * y) + 2] -= 128;
                 ycbcrToRgb(outputData.data, 4 * (x + img.width * y), pixels, 3 * (x + img.width * y));
                 // outputData.data[4 * (x + img.width * y)] = 0;
-                outputData.data[4 * (x + img.width * y) + 1] = 0;
-                outputData.data[4 * (x + img.width * y) + 2] = 0;
+                // outputData.data[4 * (x + img.width * y) + 1] = 0;
+                // outputData.data[4 * (x + img.width * y) + 2] = 0;
 
                 // let cmyk = rgbToCmyk(
                 //     inputData.data[4 * (x + img.width * y)],
@@ -154,39 +146,30 @@ onload = () => {
             }
         }
 
-        // dct(img.width, ys);
-        //
-        // for (let i = 0; i < ys.length; ++i) {
-        //     let x = i % img.width;
-        //     let y = Math.floor(i / img.width);
-        //     let s = x + y;
-        //     ys[i] *= Math.pow(1.0 - (s / img.width) / 2, 4.0);
-        // }
-        //
-        // let max = 0;
-        // for (let i = 0; i < ys.length; ++i) {
-        //     if (max < Math.sqrt(Math.abs(ys[i]))) {
-        //         max = Math.sqrt(Math.abs(ys[i]));
-        //     }
-        // }
-        //
-        // for (let y = 0; y < img.height; y++) {
-        //     for (let x = 0; x < img.width; x++) {
-        //         let v = ((x / img.width) * (y / img.height));
-        //         let rgb = grayToHeatmap(Math.sqrt(Math.abs(ys[x + img.width * y])) * v / max * 255);
-        //         rgb = grayToHeatmap((1 - v) * 255);
-        //         outputData.data[4 * (x + img.width * y)] = rgb[0];
-        //         outputData.data[4 * (x + img.width * y) + 1] = rgb[1];
-        //         outputData.data[4 * (x + img.width * y) + 2] = rgb[2];
-        //         outputData.data[4 * (x + img.width * y) + 3] = 255;
-        //     }
-        // }
+        dct(img.width, ys);
+
+        let max = 0;
+        for (let i = 0; i < ys.length; ++i) {
+            if (max < Math.abs(ys[i])) {
+                max = Math.abs(ys[i]);
+            }
+        }
+
+        for (let y = 0; y < img.height; y++) {
+            for (let x = 0; x < img.width; x++) {
+                // let rgb = grayToHeatmap(Math.abs(ys[x + img.width * y]) / max / qt[x + img.width * y] * 255);
+                let rgb = grayToHeatmap(qt[x + img.width * y] / 65 * 255);
+                outputData.data[4 * (x + img.width * y)] = rgb[0];
+                outputData.data[4 * (x + img.width * y) + 1] = rgb[1];
+                outputData.data[4 * (x + img.width * y) + 2] = rgb[2];
+                outputData.data[4 * (x + img.width * y) + 3] = 255;
+            }
+        }
 
         context.putImageData(outputData, 0, 0);
         document.body.append(canvas);
     }
-    img.src = "./assets/work/aaa.png";
-
+    img.src = "./assets/work/unit_image.png";
 }
 
 function onUploadImage(event) {

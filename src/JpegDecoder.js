@@ -661,6 +661,15 @@ export class JpegDecoder {
         if (isDebuggingDQT) {
             console.log("DQT");
             console.log(segment);
+            for (let i = 0; i < segment.tables.length; ++i) {
+                let table = segment.tables[0];
+                let qt = new Uint16Array(64);
+                reorderZigzagSequence(qt, table.Q)
+                console.log(table.T);
+                for (let j = 0; j < 64; j += 8) {
+                    console.log(`|${qt.slice(j, j + 8).join("|")}|`);
+                }
+            }
         }
 
         return segment;
