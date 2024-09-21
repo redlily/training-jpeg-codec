@@ -8,9 +8,10 @@ const isDebuggingSOF = true;
 const isDebuggingSOS = true;
 const isDebuggingSOSDetail = false;
 const isDebuggingDQT = true;
+const isDebuggingDQTDetail = true
 const isDebuggingDAC = true;
 const isDebuggingDHT = true;
-const isDebuggingDHTDetail = false;
+const isDebuggingDHTDetail = true;
 const isDebuggingDRI = true;
 const isDebuggingCOM = true;
 const isDebuggingAPP = true;
@@ -661,14 +662,19 @@ export class JpegDecoder {
         if (isDebuggingDQT) {
             console.log("DQT");
             console.log(segment);
-            for (let i = 0; i < segment.tables.length; ++i) {
+
+            if (isDebuggingDQTDetail) {
                 let table = segment.tables[0];
-                let qt = new Uint16Array(64);
-                reorderZigzagSequence(qt, table.Q)
-                console.log(table.T);
-                for (let j = 0; j < 64; j += 8) {
-                    console.log(`|${qt.slice(j, j + 8).join("|")}|`);
+                console.log(`Quantization table for ${table.T === 0 ? "DC" : "AC"}.`);
+
+                let quantizationTable = new Uint16Array(64);
+                reorderZigzagSequence(quantizationTable, table.Q);
+
+                let output = [];
+                for (let i = 0; i < 64; i += 8) {
+                    output.push(Array.from(quantizationTable.slice(i, i + 8)));
                 }
+                console.table(output);
             }
         }
 
@@ -734,9 +740,6 @@ export class JpegDecoder {
         // テーブルをより扱いやすい構造にする
         for (let i = 0; i < segment.tables.length; ++i) {
             let table = segment.tables[i];
-            if (isDebugging) {
-                console.log(`Struct a huffman table ${i}`);
-            }
             this._huffmanTrees[table.Tc][table.Th] = this._decodeHuffmanTables(table);
         }
 
@@ -748,6 +751,9 @@ export class JpegDecoder {
      */
     _decodeHuffmanTables(table) {
         let isDebugging = isDebuggingDHT && isDebuggingDHTDetail;
+        if (isDebugging) {
+            console.log(`Huffman table for ${table.Tc === 0 ? "DC" : "AC"}; ID ${table.Th}.`);
+        }
 
         let tree = [];
         let code = 0;
