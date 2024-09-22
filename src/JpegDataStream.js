@@ -22,6 +22,9 @@ export class JpegWriteStream {
 export class JpegReadStream {
     /**
      * コンストラクタ
+     * @param {ArrayBuffer} buffer データ
+     * @param {uint?} offset データオフセット
+     * @param {uint?} length データ長
      */
     constructor(buffer, offset = undefined, length = undefined) {
         this._view = new DataView(buffer, offset, length);
@@ -32,6 +35,7 @@ export class JpegReadStream {
 
     /**
      * ストリームのカーソル位置を取得する
+     * @return {uint}
      */
     get position() {
         return this._off;
@@ -39,6 +43,7 @@ export class JpegReadStream {
 
     /**
      * ストリームのカーソル位置を設定する
+     * @param {uint} position
      */
     set position(position) {
         this._off = position;
@@ -46,6 +51,7 @@ export class JpegReadStream {
 
     /**
      * 内部に保存している未出力のビット配列を取得する
+     * @return {uint}
      */
     get remainBits() {
         return this._remainBits;
@@ -53,6 +59,7 @@ export class JpegReadStream {
 
     /**
      * 内部に保存している未出力のビット配列のビット数を取得する
+     * @return {uint}
      */
     get remainBitsCount() {
         return this._remainBitsCount;
@@ -60,7 +67,7 @@ export class JpegReadStream {
 
     /**
      * ストリームを指定するバイト数スキップする
-     * @param size スキップするバイト数
+     * @param {uint} size スキップするバイト数
      */
     skip(size) {
         this._off += size;
@@ -68,7 +75,7 @@ export class JpegReadStream {
 
     /**
      * 符号なしの8bitの整数を読み込む
-     * @return 読み込んだデータ
+     * @return {uint} 読み込んだデータ
      */
     readUint8() {
         let value = this._view.getUint8(this._off);
@@ -78,7 +85,7 @@ export class JpegReadStream {
 
     /**
      * 符号なしの16bitの整数を読み込む
-     * @return 読み込んだデータ
+     * @return {uint} 読み込んだデータ
      */
     readUint16() {
         let value = this._view.getUint16(this._off);
@@ -88,9 +95,9 @@ export class JpegReadStream {
 
     /**
      * 符号なしの8bitの整数の配列を読み込む
-     * @param dst 出力先
-     * @param off 出力先の配列オフセット
-     * @param len 読み込み長
+     * @param {uint[]} dst 出力先
+     * @param {uint} off 出力先の配列オフセット
+     * @param {uint} len 読み込み長
      */
     readUint8Array(dst, off, len) {
         len = Math.min(len, this._view.byteLength - this._off);
@@ -103,8 +110,8 @@ export class JpegReadStream {
 
     /**
      * 指定長のビット配列を読み込む
-     * @param len 読み込み長
-     * @return 読み込んだデータ
+     * @param {uint} len 読み込み長
+     * @return {uint} 読み込んだデータ
      */
     readBits(len) {
         // 0bitの場合

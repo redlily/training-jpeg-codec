@@ -33,9 +33,11 @@ class JpegDecodeError extends Error {
  * JPEGのデコーダー
  */
 export class JpegDecoder {
-
     /**
      * コンストラクタ
+     * @param {ArrayBuffer} buffer データ
+     * @param {uint} offset データオフセット
+     * @param {uint} length データ長
      */
     constructor(buffer, offset = undefined, length = undefined) {
         /** データストリーム */
@@ -50,6 +52,134 @@ export class JpegDecoder {
         this._restertInterval = 0;
         /** 出力データ */
         this.out = null;
+    }
+
+    /**
+     * JPEGのデコードを行う
+     * @param {function(type, data)} callback イベントコールバック
+     */
+    decode(callback) {
+        this._callback = callback;
+
+        // SOI: イメージ開始マーカー
+        let soiMarker = this._stream.readUint16();
+        if (soiMarker !== JpegMarker.SOI) {
+            return false;
+        }
+
+        while (true) {
+            let marker = this._stream.readUint16();
+            switch (marker) {
+                // SOFマーカー
+
+                // SOF0: ベースDCT (Baseline DCT)
+                case JpegMarker.SOF0:
+                // SOF1: 拡張シーケンシャルDCT、ハフマン符号 (Extended sequential DCT, Huffman coding)
+                case JpegMarker.SOF1:
+                // SOF2: プログレッシブDCT、ハフマン符号 (Progressive DCT, Huffman coding)
+                case JpegMarker.SOF2:
+                    this._parseSOF(marker);
+                    break;
+
+                // SOF3: 可逆圧縮 (シーケンシャル)、ハフマン符号 (Lossless (sequential), Huffman coding)
+                case JpegMarker.SOF3:
+
+                // SOFマーカー (非対応)
+
+                // SOF9: 拡張シーケンシャルDCT、算術符号 (Extended sequential DCT, arithmetic coding)
+                case JpegMarker.SOF9:
+                // SOF10: プログレッシブDCT、算術符号 (Progressive DCT, arithmetic coding)
+                case JpegMarker.SOF10:
+                // SOF11: 可逆圧縮、算術符号 (Lossless (sequential), arithmetic coding)
+                case JpegMarker.SOF11:
+
+                // 拡張用SOF
+
+                // Differential sequential DCT
+                case JpegMarker.SOF5:
+                // Differential progressive DCT
+                case JpegMarker.SOF6:
+                // Differential lossless (sequential)
+                case JpegMarker.SOF7:
+                // Differential sequential DCT
+                case JpegMarker.SOF13:
+                // Differential progressive DCT
+                case JpegMarker.SOF14:
+                // Differential lossless (sequential)
+                case JpegMarker.SOF15:
+                    throw new JpegDecodeError(`Unsupported SOF${marker - JpegMarker.SOF0} marker`);
+
+                // SOS: Start of scan marker
+                case JpegMarker.SOS:
+                    this._parseSOS();
+                    break;
+
+                // DQT: 量子化テーブル (Define quantization table marker)
+                case JpegMarker.DQT:
+                    this._parseDQT();
+                    break;
+
+                // DHT: ハフマンテーブル (Define Huffman table marker)
+                case JpegMarker.DHT:
+                    this._parseDHT();
+                    break;
+
+                // DAC: Define arithmetic coding conditioning marker
+                case JpegMarker.DAC:
+                    this._parseDAC();
+                    break;
+
+                // DNL: (Define number of lines marker)
+                case JpegMarker.DNL:
+                    this._parseDNL();
+                    break;
+
+                // DRI: リスタートマーカー (Define restart interval marker)
+                case JpegMarker.DRI:
+                    this._parseDRI();
+                    break;
+
+                // DHP: (hierarchical progression marker)
+                case JpegMarker.DHP:
+                    this._parseSOF(marker);
+                    break;
+
+                // EXP: (Expand reference components marker)
+                case JpegMarker.EXP:
+                    this._parseEXP();
+                    break;
+
+                // COM: コメントマーカ (Comment marker)
+                case JpegMarker.COM:
+                    this._parseCOM();
+                    break;
+
+                // EOI: エンドマーカ (End of image)
+                case JpegMarker.EOI:
+                    if (isDebuggingEOI) {
+                        console.log("EOI");
+                    }
+                    return true;
+
+                default:
+                    if (marker >= JpegMarker.APPn && marker <= JpegMarker.APPn_end) {
+                        // APPn: アプリケーションデータマーカー
+                        this._parseAPP(marker);
+                    } else if (marker >= JpegMarker.JPGn && marker <= JpegMarker.JPGn_end) {
+                        // JPGn: JPEG拡張マーカー
+                        this._stream.skip(this._stream.readUint16() - 2);
+                        console.info(`Unsupported JPEG extension marker: ${marker.toString(16)}`);
+                    } else if ((marker & 0xff00) !== 0xff00) {
+                        // 不明、未実装マーカー
+                        this._stream.skip(this._stream.readUint16() - 2);
+                        console.info(`Unknown marker: ${marker.toString(16)}`);
+                    } else {
+                        // マーカーでない
+                        console.info(`Not marker: ${marker.toString(16)}`);
+                        return false;
+                    }
+            }
+        }
     }
 
     /**
@@ -866,7 +996,9 @@ export class JpegDecoder {
         };
     }
 
-    /** 算術符号化条件定義セグメントの解析 */
+    /**
+     * 算術符号化条件定義セグメントの解析
+     */
     _parseDAC() {
         let segment = {};
 
@@ -900,7 +1032,63 @@ export class JpegDecoder {
         return segment;
     }
 
-    /** リスタートインターバル定義セグメントの解析 */
+    /**
+     * 伸張リファレンスコンポーネントセグメントの解析
+     */
+    _parseEXP() {
+        let segment = {};
+
+        // Le: (Expand reference components segment length)
+        segment.Le = this._stream.readUint16();
+        if (segment.Le !== 3) {
+            throw new JpegDecodeError();
+        }
+
+        // Eh: (Expand horizontally)
+        let Eh_Ev = this._stream.readUint8();
+        segment.Eh = (Eh_Ev & 0xf0) >>> 4;
+
+        // Ev: (Expand vertically)
+        segment.Ev = Eh_Ev & 0x0f;
+
+        if (isDebuggingEXP) {
+            console.log("EXP");
+            console.log(segment);
+        }
+
+        return segment;
+    }
+
+    /**
+     * ライン数定義セグメントの解析
+     */
+    _parseDNL() {
+        let segment = {};
+
+        // Ld: (Define number of lines segment length)
+        segment.Nd = this._stream.readUint16();
+        if (segment.Nd !== 4) {
+            throw new JpegDecodeError();
+        }
+
+        // NL: (Number of lines)
+        segment.NL = this._stream.readUint16();
+
+        if (this._frame !== null) {
+            this._frame.height = segment.NL;
+        }
+
+        if (isDebuggingDNL) {
+            console.log("DNL");
+            console.log(segment);
+        }
+
+        return segment;
+    }
+
+    /**
+     * リスタートインターバル定義セグメントの解析
+     */
     _parseDRI() {
         let segment = {};
 
@@ -968,182 +1156,5 @@ export class JpegDecoder {
         }
 
         return segment;
-    }
-
-    /**
-     * ライン数定義セグメントの解析
-     */
-    _parseDNL() {
-        let segment = {};
-
-        // Ld: (Define number of lines segment length)
-        segment.Nd = this._stream.readUint16();
-        if (segment.Nd !== 4) {
-            throw new JpegDecodeError();
-        }
-
-        // NL: (Number of lines)
-        segment.NL = this._stream.readUint16();
-
-        if (isDebuggingDNL) {
-            console.log("DNL");
-            console.log(segment);
-        }
-
-        return segment;
-    }
-
-    /**
-     * 伸張リファレンスコンポーネントセグメントの解析
-     */
-    _parseEXP() {
-        let segment = {};
-
-        // Le: (Expand reference components segment length)
-        segment.Le = this._stream.readUint16();
-        if (segment.Le !== 3) {
-            throw new JpegDecodeError();
-        }
-
-        // Eh: (Expand horizontally)
-        let Eh_Ev = this._stream.readUint8();
-        segment.Eh = (Eh_Ev & 0xf0) >>> 4;
-
-        // Ev: (Expand vertically)
-        segment.Ev = Eh_Ev & 0x0f;
-
-        if (isDebuggingEXP) {
-            console.log("EXP");
-            console.log(segment);
-        }
-
-        return segment;
-    }
-
-    /**
-     * JPEGのデコードを行う
-     */
-    decode(callback) {
-        this._callback = callback;
-
-        // SOI: イメージ開始マーカー
-        let soiMarker = this._stream.readUint16();
-        if (soiMarker !== JpegMarker.SOI) {
-            return false;
-        }
-
-        while (true) {
-            let marker = this._stream.readUint16();
-            switch (marker) {
-                // SOFマーカー
-
-                // SOF0: ベースDCT (Baseline DCT)
-                case JpegMarker.SOF0:
-                // SOF1: 拡張シーケンシャルDCT、ハフマン符号 (Extended sequential DCT, Huffman coding)
-                case JpegMarker.SOF1:
-                // SOF2: プログレッシブDCT、ハフマン符号 (Progressive DCT, Huffman coding)
-                case JpegMarker.SOF2:
-                    this._parseSOF(marker);
-                    break;
-
-                // SOF3: 可逆圧縮 (シーケンシャル)、ハフマン符号 (Lossless (sequential), Huffman coding)
-                case JpegMarker.SOF3:
-
-                // SOFマーカー (非対応)
-
-                // SOF9: 拡張シーケンシャルDCT、算術符号 (Extended sequential DCT, arithmetic coding)
-                case JpegMarker.SOF9:
-                // SOF10: プログレッシブDCT、算術符号 (Progressive DCT, arithmetic coding)
-                case JpegMarker.SOF10:
-                // SOF11: 可逆圧縮、算術符号 (Lossless (sequential), arithmetic coding)
-                case JpegMarker.SOF11:
-
-                // 拡張用SOF
-
-                // Differential sequential DCT
-                case JpegMarker.SOF5:
-                // Differential progressive DCT
-                case JpegMarker.SOF6:
-                // Differential lossless (sequential)
-                case JpegMarker.SOF7:
-                // Differential sequential DCT
-                case JpegMarker.SOF13:
-                // Differential progressive DCT
-                case JpegMarker.SOF14:
-                // Differential lossless (sequential)
-                case JpegMarker.SOF15:
-                    throw new JpegDecodeError(`Unsupported SOF${marker - JpegMarker.SOF0} marker`);
-
-                // SOS: Start of scan marker
-                case JpegMarker.SOS:
-                    this._parseSOS();
-                    break;
-
-                // DQT: 量子化テーブル (Define quantization table marker)
-                case JpegMarker.DQT:
-                    this._parseDQT();
-                    break;
-
-                // DHT: ハフマンテーブル (Define Huffman table marker)
-                case JpegMarker.DHT:
-                    this._parseDHT();
-                    break;
-
-                // DAC: Define arithmetic coding conditioning marker
-                case JpegMarker.DAC:
-                    this._parseDAC();
-                    break;
-
-                // DRI: リスタートマーカー (Define restart interval marker)
-                case JpegMarker.DRI:
-                    this._parseDRI();
-                    break;
-
-                // COM: コメントマーカ (Comment marker)
-                case JpegMarker.COM:
-                    this._parseCOM();
-                    break;
-
-                // DNL: (Define number of lines marker)
-                case JpegMarker.DNL:
-                    this._parseDNL();
-                    break;
-
-                // DHP: (hierarchical progression marker)
-                case JpegMarker.DHP:
-                    this._parseSOF(marker);
-                    break;
-
-                // EXP: (Expand reference components marker)
-                case JpegMarker.EXP:
-                    this._parseEXP();
-                    break;
-
-                // EOI: エンドマーカ (End of image)
-                case JpegMarker.EOI:
-                    if (isDebuggingEOI) {
-                        console.log("EOI");
-                    }
-                    return true;
-
-                default:
-                    if (marker >= JpegMarker.APPn && marker <= JpegMarker.APPn_end) {
-                        // APPn: アプリケーションデータマーカー
-                        this._parseAPP(marker);
-                    } else if (marker >= JpegMarker.JPGn && marker <= JpegMarker.JPGn_end) {
-                        // JPGn: JPEG拡張マーカー
-                        this._stream.skip(this._stream.readUint16() - 2);
-                        console.info(`Unsupported JPEG extension marker: ${marker.toString(16)}`);
-                    } else if ((marker & 0xff00) !== 0xff00) {
-                        // 不明、未実装マーカー
-                        this._stream.skip(this._stream.readUint16() - 2);
-                        console.info(`Unknown marker: ${marker.toString(16)}`);
-                    } else {
-                        // マーカーでない
-                        console.info(`Not marker: ${marker.toString(16)}`);
-                        return false;
-                    }
-            }
-        }
     }
 }

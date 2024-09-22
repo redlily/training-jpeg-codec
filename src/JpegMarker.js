@@ -4,7 +4,20 @@
 export class JpegMarker {
 
     //
-    // Start Of Frame markers, non-differential, Huffman coding.
+    // 画像の開始/終了マーカー
+    //
+
+    /** Start of image. 画像の開始 */
+    static get SOI() {
+        return 0xFFD8;
+    }
+
+    /** End of image. 画像の終了 */
+    static get EOI() {
+        return 0xFFD9;
+    }
+
+    //
     // フレームの開始マーカー、非差分、ハフマン符号化
     //
 
@@ -29,7 +42,6 @@ export class JpegMarker {
     }
 
     //
-    // Start Of Frame markers, differential, Huffman coding.
     // フレームの開始マーカー、差分、ハフマン符号化
     //
 
@@ -49,7 +61,6 @@ export class JpegMarker {
     }
 
     //
-    // Start Of Frame markers, non-differential, arithmetic coding.
     // フレームの開始マーカー、非差分、算術符号化
     //
 
@@ -74,7 +85,6 @@ export class JpegMarker {
     }
 
     //
-    // Start Of Frame markers, differential, arithmetic coding.
     // フレームの開始マーカー、差分、算術符号化
     //
 
@@ -94,8 +104,7 @@ export class JpegMarker {
     }
 
     //
-    // Huffman table specification.
-    // ハフマンテーブルの仕様
+    // エントロピー符号化
     //
 
     /** Define Huffman table(s). ハフマンテーブル */
@@ -103,18 +112,12 @@ export class JpegMarker {
         return 0xFFC4;
     }
 
-    //
-    // Arithmetic coding conditioning specification.
-    // 算術符号化コンディショニングの仕様
-    //
-
     /** Define arithmetic coding conditioning(s). 算術符号化コンディショニングの定義 */
     static get DAC() {
         return 0xFFCC;
     }
 
     //
-    // Restart interval termination.
     // リスタートインターバルの終端子
     //
 
@@ -129,28 +132,12 @@ export class JpegMarker {
     }
 
     //
-    // Other markers.
-    // その他のマーカー
+    // テーブル/その他のマーカー
     //
-
-    /** Start of image. 画像の開始 */
-    static get SOI() {
-        return 0xFFD8;
-    }
-
-    /** End of image. 画像の終了 */
-    static get EOI() {
-        return 0xFFD9;
-    }
 
     /** Start of scan. スキャンの開始 */
     static get SOS() {
         return 0xFFDA;
-    }
-
-    /** Define quantization table(s). 量子化テーブルの定義 */
-    static get DQT() {
-        return 0xFFDB;
     }
 
     /** Define number of lines. ライン数の定義 */
@@ -158,9 +145,14 @@ export class JpegMarker {
         return 0xFFDC;
     }
 
-    /** Define restart interval. リスタートインターバルの定義 */
-    static get DRI() {
-        return 0xFFDD;
+    /** Expand reference components(s). 伸張リファレンスの定義 */
+    static get EXP() {
+        return 0xFFDF;
+    }
+
+    /** Define quantization table(s). 量子化テーブルの定義 */
+    static get DQT() {
+        return 0xFFDB;
     }
 
     /** Define hierarchical progression. 階層プログレスの定義 */
@@ -168,9 +160,14 @@ export class JpegMarker {
         return 0xFFDE;
     }
 
-    /** Expand reference components(s). 伸張リファレンスの定義 */
-    static get EXP() {
-        return 0xFFDF;
+    /** Define restart interval. リスタートインターバルの定義 */
+    static get DRI() {
+        return 0xFFDD;
+    }
+
+    /** Comment. コメント */
+    static get COM() {
+        return 0xFFFE;
     }
 
     /** Reserved for application segments. 0xFFE0 through 0xFFEF 予約済みのアプリケーションセグメント */
@@ -193,13 +190,7 @@ export class JpegMarker {
         return 0xFFFD;
     }
 
-    /** Comment. コメント */
-    static get COM() {
-        return 0xFFFE;
-    }
-
     //
-    // Reserved markers.
     // 予約済みマーカー
     //
 

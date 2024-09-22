@@ -1,9 +1,9 @@
 /**
  * RGBをYCbCrに変換する
- * @param dst 出力先
- * @param dstOff 出力先の配列オフセット
- * @param src 入力元
- * @param srcOff 入力元の配列オフセット
+ * @param {number[]|Float32Array|Float64Array} dst 出力先
+ * @param {uint} dstOff 出力先の配列オフセット
+ * @param {number[]|Float32Array|Float64Array} src 入力元
+ * @param {uint} srcOff 入力元の配列オフセット
  */
 export function rgbToYcbcr(dst, dstOff, src, srcOff) {
     let r = src[srcOff];
@@ -16,10 +16,10 @@ export function rgbToYcbcr(dst, dstOff, src, srcOff) {
 
 /**
  * YCbCrをRGBに変換する
- * @param dst 出力先
- * @param dstOff 出力先の配列オフセット
- * @param src 入力元
- * @param srcOff 入力元の配列オフセット
+ * @param {number[]|Float32Array|Float64Array} dst 出力先
+ * @param {uint} dstOff 出力先の配列オフセット
+ * @param {number[]|Float32Array|Float64Array} src 入力元
+ * @param {uint} srcOff 入力元の配列オフセット
  */
 export function ycbcrToRgb(dst, dstOff, src, srcOff) {
     let y = src[srcOff] + 128;
@@ -46,8 +46,8 @@ const zigzagSequenceIndices = [
 
 /**
  * 8*8の正方行列をジグザグに並べる
- * @param dst 出力先
- * @param src 入力元
+ * @param {number[]|Float32Array|Float64Array} dst 出力先
+ * @param {number[]|Float32Array|Float64Array} src 入力元
  */
 export function orderZigzagSequence(dst, src) {
     for (let i = 0; i < 64; ++i) {
@@ -57,8 +57,8 @@ export function orderZigzagSequence(dst, src) {
 
 /**
  * ジグザグに並べられた配列を8*8の正方行列に並べなおす
- * @param dst 出力先
- * @param src 入力元
+ * @param {number[]|Float32Array|Float64Array} dst 出力先
+ * @param {number[]|Float32Array|Float64Array} src 入力元
  */
 export function reorderZigzagSequence(dst, src) {
     for (let i = 0; i < 64; ++i) {

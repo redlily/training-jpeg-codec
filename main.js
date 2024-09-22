@@ -3,6 +3,8 @@ import {ycbcrToRgb, rgbToYcbcr, reorderZigzagSequence} from "./src/JpegCommon.js
 import {dct, idct} from "./src/JpegSignal.js";
 import {dct2D, idct2D} from "./src/signal.js";
 
+import {decode} from "./src/Jpeg.js";
+
 let uploadFile;
 let previousCanvas = null;
 
@@ -184,7 +186,7 @@ function onUploadImage(event) {
     let fileReader = new FileReader();
 
     fileReader.onload = (event) => {
-        let decoder = new Decoder.JpegDecoder(fileReader.result);
+         let decoder = new Decoder.JpegDecoder(fileReader.result);
         decoder.decode((type, out) => {
             if (type === "decodeImage") {
                 let canvas = document.createElement("canvas");
