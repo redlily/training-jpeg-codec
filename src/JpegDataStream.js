@@ -2,8 +2,9 @@
  * データストリーム用の例外クラス
  */
 class JpegDataStreamError extends Error {
-
-    /** コンストラクタ */
+    /**
+     * コンストラクタ
+     */
     constructor(message) {
         super(message);
     }

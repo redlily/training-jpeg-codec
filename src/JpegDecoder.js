@@ -1,7 +1,7 @@
-import {idct} from "./JpegSignal.js";
-import {ycbcrToRgb, reorderZigzagSequence} from "./JpegCommon.js";
-import {JpegReadStream} from "./JpegDataStream.js";
 import {JpegMarker} from "./JpegMarker.js";
+import {JpegReadStream} from "./JpegDataStream.js";
+import {ycbcrToRgb, reorderZigzagSequence} from "./JpegCommon.js";
+import {idct} from "./JpegSignal.js";
 
 // デバッグ用のフラグ
 const isDebuggingSOF = true;
@@ -23,7 +23,10 @@ const isDebuggingEOI = true;
  * JPEGデコーダ用の例外クラス
  */
 class JpegDecodeError extends Error {
-
+    /**
+     * コンストラクタ
+     * @param {string} message メッセージ
+     */
     constructor(message) {
         super(message);
     }
@@ -61,7 +64,7 @@ export class JpegDecoder {
     decode(callback) {
         this._callback = callback;
 
-        // SOI: イメージ開始マーカー
+        // SOI: イメージ開始
         let soiMarker = this._stream.readUint16();
         if (soiMarker !== JpegMarker.SOI) {
             return false;
@@ -70,7 +73,20 @@ export class JpegDecoder {
         while (true) {
             let marker = this._stream.readUint16();
             switch (marker) {
-                // SOFマーカー
+                //
+                // 画像の開始/終了マーカー
+                //
+
+                // EOI: イメージ終了 (End of image)
+                case JpegMarker.EOI:
+                    if (isDebuggingEOI) {
+                        console.log("EOI");
+                    }
+                    return true;
+
+                //
+                // フレームの開始マーカー、非差分、ハフマン符号化
+                //
 
                 // SOF0: ベースDCT (Baseline DCT)
                 case JpegMarker.SOF0:
@@ -109,64 +125,65 @@ export class JpegDecoder {
                 case JpegMarker.SOF15:
                     throw new JpegDecodeError(`Unsupported SOF${marker - JpegMarker.SOF0} marker`);
 
-                // SOS: Start of scan marker
-                case JpegMarker.SOS:
-                    this._parseSOS();
-                    break;
+                //
+                // エントロピー符号化
+                //
 
-                // DQT: 量子化テーブル (Define quantization table marker)
-                case JpegMarker.DQT:
-                    this._parseDQT();
-                    break;
-
-                // DHT: ハフマンテーブル (Define Huffman table marker)
+                // DHT: ハフマンテーブル定義
                 case JpegMarker.DHT:
                     this._parseDHT();
                     break;
 
-                // DAC: Define arithmetic coding conditioning marker
+                // DAC: 算術符号化条件定義
                 case JpegMarker.DAC:
                     this._parseDAC();
                     break;
 
-                // DNL: (Define number of lines marker)
+                //
+                // テーブル/その他のマーカー
+                //
+
+                // SOS: スキャン開始
+                case JpegMarker.SOS:
+                    this._parseSOS();
+                    break;
+
+                // DNL: ライン数定義
                 case JpegMarker.DNL:
                     this._parseDNL();
                     break;
 
-                // DRI: リスタートマーカー (Define restart interval marker)
-                case JpegMarker.DRI:
-                    this._parseDRI();
-                    break;
-
-                // DHP: (hierarchical progression marker)
-                case JpegMarker.DHP:
-                    this._parseSOF(marker);
-                    break;
-
-                // EXP: (Expand reference components marker)
+                // EXP: 拡張リファレンスコンポーネント
                 case JpegMarker.EXP:
                     this._parseEXP();
                     break;
 
-                // COM: コメントマーカ (Comment marker)
+                // DQT: 量子化テーブル定義
+                case JpegMarker.DQT:
+                    this._parseDQT();
+                    break;
+
+                // DHP: 階層プログレス定義
+                case JpegMarker.DHP:
+                    this._parseSOF(marker);
+                    break;
+
+                // DRI: リスタートインターバル定義
+                case JpegMarker.DRI:
+                    this._parseDRI();
+                    break;
+
+                // COM: コメント
                 case JpegMarker.COM:
                     this._parseCOM();
                     break;
 
-                // EOI: エンドマーカ (End of image)
-                case JpegMarker.EOI:
-                    if (isDebuggingEOI) {
-                        console.log("EOI");
-                    }
-                    return true;
-
                 default:
                     if (marker >= JpegMarker.APPn && marker <= JpegMarker.APPn_end) {
-                        // APPn: アプリケーションデータマーカー
+                        // APPn: 予約済みのアプリケーションセグメント
                         this._parseAPP(marker);
                     } else if (marker >= JpegMarker.JPGn && marker <= JpegMarker.JPGn_end) {
-                        // JPGn: JPEG拡張マーカー
+                        // JPGn: 予約済みのJPEG拡張
                         this._stream.skip(this._stream.readUint16() - 2);
                         console.info(`Unsupported JPEG extension marker: ${marker.toString(16)}`);
                     } else if ((marker & 0xff00) !== 0xff00) {
@@ -1033,33 +1050,6 @@ export class JpegDecoder {
     }
 
     /**
-     * 伸張リファレンスコンポーネントセグメントの解析
-     */
-    _parseEXP() {
-        let segment = {};
-
-        // Le: (Expand reference components segment length)
-        segment.Le = this._stream.readUint16();
-        if (segment.Le !== 3) {
-            throw new JpegDecodeError();
-        }
-
-        // Eh: (Expand horizontally)
-        let Eh_Ev = this._stream.readUint8();
-        segment.Eh = (Eh_Ev & 0xf0) >>> 4;
-
-        // Ev: (Expand vertically)
-        segment.Ev = Eh_Ev & 0x0f;
-
-        if (isDebuggingEXP) {
-            console.log("EXP");
-            console.log(segment);
-        }
-
-        return segment;
-    }
-
-    /**
      * ライン数定義セグメントの解析
      */
     _parseDNL() {
@@ -1080,6 +1070,33 @@ export class JpegDecoder {
 
         if (isDebuggingDNL) {
             console.log("DNL");
+            console.log(segment);
+        }
+
+        return segment;
+    }
+
+    /**
+     * 伸張リファレンスコンポーネントセグメントの解析
+     */
+    _parseEXP() {
+        let segment = {};
+
+        // Le: (Expand reference components segment length)
+        segment.Le = this._stream.readUint16();
+        if (segment.Le !== 3) {
+            throw new JpegDecodeError();
+        }
+
+        // Eh: (Expand horizontally)
+        let Eh_Ev = this._stream.readUint8();
+        segment.Eh = (Eh_Ev & 0xf0) >>> 4;
+
+        // Ev: (Expand vertically)
+        segment.Ev = Eh_Ev & 0x0f;
+
+        if (isDebuggingEXP) {
+            console.log("EXP");
             console.log(segment);
         }
 

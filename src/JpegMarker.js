@@ -2,7 +2,6 @@
  * JPEGのマーカーの定義をまとめたクラス
  */
 export class JpegMarker {
-
     //
     // 画像の開始/終了マーカー
     //
@@ -140,22 +139,22 @@ export class JpegMarker {
         return 0xFFDA;
     }
 
-    /** Define number of lines. ライン数の定義 */
+    /** Define number of lines. ライン数 */
     static get DNL() {
         return 0xFFDC;
     }
 
-    /** Expand reference components(s). 伸張リファレンスの定義 */
+    /** Expand reference components(s). 伸張リファレンスコンポーネント */
     static get EXP() {
         return 0xFFDF;
     }
 
-    /** Define quantization table(s). 量子化テーブルの定義 */
+    /** Define quantization table(s). 量子化テーブル定義 */
     static get DQT() {
         return 0xFFDB;
     }
 
-    /** Define hierarchical progression. 階層プログレスの定義 */
+    /** Define hierarchical progression. 階層プログレス定義 */
     static get DHP() {
         return 0xFFDE;
     }

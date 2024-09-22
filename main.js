@@ -1,9 +1,7 @@
 import * as Decoder from "./src/JpegDecoder.js";
 import {ycbcrToRgb, rgbToYcbcr, reorderZigzagSequence} from "./src/JpegCommon.js";
 import {dct, idct} from "./src/JpegSignal.js";
-import {dct2D, idct2D} from "./src/signal.js";
-
-import {decode} from "./src/Jpeg.js";
+import {dct2D, idct2D} from "./src/ExpImp.js";
 
 let uploadFile;
 let previousCanvas = null;
