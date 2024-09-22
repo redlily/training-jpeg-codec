@@ -1027,13 +1027,13 @@ export class JpegDecoder {
         this._callback = callback;
 
         // SOI: イメージ開始マーカー
-        let soiMarker = this._stream.readMaker();
+        let soiMarker = this._stream.readUint16();
         if (soiMarker !== JpegMarker.SOI) {
             return false;
         }
 
         while (true) {
-            let marker = this._stream.readMaker();
+            let marker = this._stream.readUint16();
             switch (marker) {
                 // SOFマーカー
 

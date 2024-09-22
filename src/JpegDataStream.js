@@ -20,7 +20,6 @@ export class JpegWriteStream {
  * JPEGのデータ読み込み用のデータストリームクラス
  */
 export class JpegReadStream {
-
     /**
      * コンストラクタ
      */
@@ -60,7 +59,8 @@ export class JpegReadStream {
     }
 
     /**
-     * ストリームを指定するbyte数スキップする
+     * ストリームを指定するバイト数スキップする
+     * @param size スキップするバイト数
      */
     skip(size) {
         this._off += size;
@@ -68,6 +68,7 @@ export class JpegReadStream {
 
     /**
      * 符号なしの8bitの整数を読み込む
+     * @return 読み込んだデータ
      */
     readUint8() {
         let value = this._view.getUint8(this._off);
@@ -77,6 +78,7 @@ export class JpegReadStream {
 
     /**
      * 符号なしの16bitの整数を読み込む
+     * @return 読み込んだデータ
      */
     readUint16() {
         let value = this._view.getUint16(this._off);
@@ -85,16 +87,10 @@ export class JpegReadStream {
     }
 
     /**
-     * マーカーを読み込む
-     */
-    readMaker() {
-        let value = this._view.getUint16(this._off);
-        this._off += 2;
-        return value;
-    }
-
-    /**
      * 符号なしの8bitの整数の配列を読み込む
+     * @param dst 出力先
+     * @param off 出力先の配列オフセット
+     * @param len 読み込み長
      */
     readUint8Array(dst, off, len) {
         len = Math.min(len, this._view.byteLength - this._off);
@@ -106,36 +102,38 @@ export class JpegReadStream {
     }
 
     /**
-     * 指定数のビット配列を読み込む
+     * 指定長のビット配列を読み込む
+     * @param len 読み込み長
+     * @return 読み込んだデータ
      */
-    readBits(num) {
+    readBits(len) {
         // 0bitの場合
-        if (num === 0) {
+        if (len === 0) {
             return 0;
         }
 
         // 読み込み要求されているビット数が内部保留のビット数より小さい場合
-        if (num <= this._remainBitsCount) {
-            let result = this._remainBits >>> (this._remainBitsCount - num);
-            this._remainBitsCount -= num;
+        if (len <= this._remainBitsCount) {
+            let result = this._remainBits >>> (this._remainBitsCount - len);
+            this._remainBitsCount -= len;
             this._remainBits &= 0xff >>> (8 - this._remainBitsCount);
             return result;
         }
 
         // 読み込み要求されているビット数が内部保留のビット数より大きい場合
         let result = this._remainBits;
-        num -= this._remainBitsCount;
+        len -= this._remainBitsCount;
         this._remainBits = 0;
         this._remainBitsCount = 0;
-        while (num >= 8) {
+        while (len >= 8) {
             let bits = this._readUnit8ForReadingBits();
             result = (result << 8) | bits;
-            num -= 8;
+            len -= 8;
         }
-        if (num > 0) {
+        if (len > 0) {
             this._remainBits = this._readUnit8ForReadingBits();
-            this._remainBitsCount = 8 - num;
-            result = (result << num) | (this._remainBits >>> this._remainBitsCount);
+            this._remainBitsCount = 8 - len;
+            result = (result << len) | (this._remainBits >>> this._remainBitsCount);
             this._remainBits &= 0xff >>> (8 - this._remainBitsCount);
         }
         return result;
