@@ -46,8 +46,8 @@ const zigzagSequenceIndices = [
 
 /**
  * 8*8の正方行列をジグザグに並べる
- * @param {number[]|Uint8Array|Uint16Array} dst 出力先
- * @param {number[]|Uint8Array|Uint16Array} src 入力元
+ * @param {number[]|Uint8Array|Uint16Array|Float32Array|Float64Array} dst 出力先
+ * @param {number[]|Uint8Array|Uint16Array|Float32Array|Float64Array} src 入力元
  */
 export function orderZigzagSequence(dst, src) {
     for (let i = 0; i < 64; ++i) {
@@ -57,8 +57,8 @@ export function orderZigzagSequence(dst, src) {
 
 /**
  * ジグザグに並べられた配列を8*8の正方行列に並べなおす
- * @param {number[]|Uint16Array} dst 出力先
- * @param {number[]|Uint16Array} src 入力元
+ * @param {number[]|Uint8Array|Uint16Array|Float32Array|Float64Array} dst 出力先
+ * @param {number[]|Uint8Array|Uint16Array|Float32Array|Float64Array} src 入力元
  */
 export function reorderZigzagSequence(dst, src) {
     for (let i = 0; i < 64; ++i) {

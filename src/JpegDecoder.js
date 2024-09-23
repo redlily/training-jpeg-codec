@@ -190,11 +190,9 @@ export class JpegDecoder {
         segment.P = this._stream.readUint8();
 
         if (marker === JpegMarker.SOF0 && segment.P !== 8) {
-            // ベースラインで8bitでない場合
             throw new JpegDecodeError("This frame segment has been broken.");
         } else if ((marker === JpegMarker.SOF1 || marker === JpegMarker.SOF2) &&
             (segment.P !== 8 && segment.P !== 12)) {
-            // 拡張シーケンシャルもしくはプログレッシブで8bitでなく12bitでもない場合
             throw new JpegDecodeError("This frame segment has been broken.");
         }
 
@@ -211,12 +209,9 @@ export class JpegDecoder {
 
         // Nf: フレームのイメージコンポーネント数 (Number of image components in frame)
         segment.Nf = this._stream.readUint8();
-
         if ((marker === JpegMarker.SOF0 || marker === JpegMarker.SOF1) && segment.Nf < 1) {
-            // ベースラインもしくは拡張シーケンシャルでコンポーネント数が1以下の場合
             throw new JpegDecodeError("This frame segment has been broken.");
         } else if (marker === JpegMarker.SOF2 && (segment.Nf < 1 || segment.Nf > 4)) {
-            // プログレッシブでコンポーネント数が1～4の範囲に収まっていない場合
             throw new JpegDecodeError("This frame segment has been broken.");
         }
 
@@ -231,24 +226,20 @@ export class JpegDecoder {
 
             // H_i: 水平方向のサンプリング数 (Horizontal sampling factor)
             component.H = 0xf & (H_V >> 4);
-
             if (component.H < 1 || component.H > 4) {
-                // 水平方向のサンプリング数が1～4の範囲に収まっていない場合
                 throw new JpegDecodeError("This frame segment has been broken.");
             }
 
             // V_i: 垂直方向のサンプリング数 (Vertical sampling factor)
             component.V = 0xf & H_V;
-
             if (component.V < 1 || component.V > 4) {
-                // 垂直方向のサンプリング数が1～4の範囲に収まっていない場合
                 throw new JpegDecodeError("This frame segment has been broken.");
             }
 
             // Tq_i: 量子化テーブル出力セレクター (Quantization table destination selector)
             component.Tq = this._stream.readUint8();
-            if ((JpegMarker.SOF0 || JpegMarker.SOF1 || JpegMarker.SOF2) && component.Tq > 3) {
-                // 量子化テーブルのセレクターが～3の範囲に収まっていない場合
+            if ((marker === JpegMarker.SOF0 || marker === JpegMarker.SOF1 || marker === JpegMarker.SOF2) &&
+                component.Tq > 3) {
                 throw new JpegDecodeError("This frame segment has been broken.")
             }
 
@@ -260,14 +251,14 @@ export class JpegDecoder {
             console.log(segment);
         }
 
-        this._constructFrameInfo(segment);
+        this._constructFrameInfo(marker, segment);
         return segment;
     }
 
     /**
      * フレーム情報の構築
      */
-    _constructFrameInfo(segment) {
+    _constructFrameInfo(marker, segment) {
         // サンプリング要素数の最大値
         let maxHorizontalSamplingFactor = 1;
         let maxVerticalSamplingFactor = 1;
@@ -344,6 +335,8 @@ export class JpegDecoder {
 
         // フレーム情報の構築
         this._frame = {
+            /** タイプ */
+            type: marker,
             /** イメージの幅 */
             width: width,
             /** イメージの高さ */
@@ -364,6 +357,7 @@ export class JpegDecoder {
      */
     _parseSOS() {
         let segment = {};
+        let frameType = this._frame.type;
 
         // Ls: スキャンヘッダーデータ長 (Scan header length)
         segment.Ls = this._stream.readUint16();
@@ -386,26 +380,56 @@ export class JpegDecoder {
 
             // Td_j: 直流エントロピーコーディングテーブルのセレクター (DC entropy coding table destination selector)
             component.Td = 0xf & (Td_Ta >> 4);
+            if (frameType === JpegMarker.SOF0 && segment.Td > 1) {
+                throw new JpegDecodeError("This scan segment has been broken.");
+            } else if ((frameType === JpegMarker.SOF1 || frameType === JpegMarker.SOF2) && segment.Td > 3) {
+                throw new JpegDecodeError("This scan segment has been broken.");
+            }
 
             // Ta_j: 交流エントロピーコーディングテーブルのセレクター (AC entropy coding table destination selector)
             component.Ta = 0xf & Td_Ta;
+            if (frameType === JpegMarker.SOF0 && segment.Ta > 1) {
+                throw new JpegDecodeError("This scan segment has been broken.");
+            } else if ((frameType === JpegMarker.SOF1 || frameType === JpegMarker.SOF2) && segment.Ta > 3) {
+                throw new JpegDecodeError("This scan segment has been broken.");
+            }
 
             segment.components[j] = component;
         }
 
         // Ss: スペクトルかプリディクターの開始セレクター (Start of spectral or predictor selection)
         segment.Ss = this._stream.readUint8();
+        if ((frameType === JpegMarker.SOF0 || frameType === JpegMarker.SOF1) && segment.Ss !== 0) {
+            throw new JpegDecodeError("This scan segment has been broken.");
+        } else if (frameType === JpegMarker.SOF3 && segment.Ss > 63) {
+            throw new JpegDecodeError("This scan segment has been broken.");
+        }
 
         // Se: スペクトルの終了セレクター (End of spectral selection)
         segment.Se = this._stream.readUint8();
+        if ((frameType === JpegMarker.SOF0 || frameType === JpegMarker.SOF1) && segment.Se !== 63) {
+            throw new JpegDecodeError("This scan segment has been broken.");
+        } else if (frameType === JpegMarker.SOF3 && (segment.Ss > segment.Se && segment.Se > 63)) {
+            throw new JpegDecodeError("This scan segment has been broken.");
+        }
 
         let Ah_Al = this._stream.readUint8();
 
         // Ah: 逐次近似の上位のビットの位置 (Successive approximation bit position high)
         segment.Ah = 0xf & (Ah_Al >> 4);
+        if ((frameType === JpegMarker.SOF0 || frameType === JpegMarker.SOF1) && segment.Ah !== 0) {
+            throw new JpegDecodeError("This scan segment has been broken.");
+        } else if (frameType === JpegMarker.SOF3 && segment.Ah > 13) {
+            throw new JpegDecodeError("This scan segment has been broken.");
+        }
 
         // Al: 逐次近似の下位のビットの位置もしくはピットの移動値 (Successive approximation bit position low or point transform)
         segment.Al = 0xf & Ah_Al;
+        if ((frameType === JpegMarker.SOF0 || frameType === JpegMarker.SOF1) && segment.Al !== 0) {
+            throw new JpegDecodeError("This scan segment has been broken.");
+        } else if (frameType === JpegMarker.SOF3 && segment.Al > 13) {
+            throw new JpegDecodeError("This scan segment has been broken.");
+        }
 
         if (isDebuggingSOS) {
             console.log("SOS");
@@ -789,6 +813,7 @@ export class JpegDecoder {
      */
     _parseDQT() {
         let segment = {};
+        let frameType = this._frame.type;
 
         // Lq: 量子化テーブル定義のデータ長 (Quantization table definition length)
         segment.Lq = this._stream.readUint16();

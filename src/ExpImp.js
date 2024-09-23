@@ -1,3 +1,6 @@
+/**
+ * 離散コサイン変換タイプ2、高速化なし
+ */
 function dctII(x, N) {
     let X = new Float32Array(N);
     for (let k = 0; k < N; ++k) {
@@ -10,6 +13,9 @@ function dctII(x, N) {
     return X;
 }
 
+/**
+ * 離散コサイン変換タイプ3、高速化なし
+ */
 function dctIII(x, N) {
     let X = new Float32Array(N);
     for (let k = 0; k < N; ++k) {
@@ -22,6 +28,9 @@ function dctIII(x, N) {
     return X;
 }
 
+/**
+ * JPEG用の2次元離散コサイン変換
+ */
 export function dct2D(N, s, S) {
     for (let u = 0; u < N; u++) {
         for (let v = 0; v < N; v++) {
@@ -42,6 +51,9 @@ export function dct2D(N, s, S) {
     return S;
 }
 
+/**
+ * JPEG用の2次元逆離散コサイン変換
+ */
 export function idct2D(N, S, s) {
     for (let x = 0; x < N; x++) {
         for (let y = 0; y < N; y++) {
