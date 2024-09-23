@@ -609,11 +609,10 @@ JPEGのではハフマンテーブルと呼ばれており実際には下記の�
 
 - SOI (Start of image marker: 画像スタートマーカー)
 - EOI (End of image marker: 画像終了マーカー)
+- DQT (Define quantization table marker: 量子化テーブル定義マーカー)
+- DHT (Define Huffman table marker: ハフマンテーブル定義マーカー)
 - SOF (Start of frame marker: フレームスタートマーカー)
 - SOS (Start of scan marker: スキャンマーカー)
-- DHT (Define Huffman table marker: ハフマンテーブル定義マーカー)
-- DQT (Define quantization table marker: 量子化テーブル定義マーカー)
-- DAC (Define arithmetic coding conditioning marker: 算術符号化条件マーカー)
 
 ### ユーティリティ
 
@@ -1610,11 +1609,9 @@ class JpegDecoder {
 
 ### ハフマン符号化
 
-#### 直流マグニチュードカテゴリ
+#### マグニチュードカテゴリ
 
-#### 交流コードテーブル
-
-#### 交流マグニチュードカテゴリ
+#### 逐次近似 (ハフマン符号化用)
 
 ## サンプルプログラム
 
