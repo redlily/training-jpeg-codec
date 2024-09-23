@@ -73,16 +73,12 @@ export class JpegDecoder {
         while (true) {
             let marker = this._stream.readUint16();
             switch (marker) {
-                // 画像の開始/終了マーカー
-
                 // イメージ終了
                 case JpegMarker.EOI:
                     if (isDebuggingEOI) {
                         console.log("EOI");
                     }
                     return true;
-
-                // フレームの開始マーカー
 
                 // ベースDCT
                 case JpegMarker.SOF0:
@@ -115,23 +111,14 @@ export class JpegDecoder {
                 case JpegMarker.SOF15:
                     throw new JpegDecodeError(`Unsupported SOF${marker - JpegMarker.SOF0} marker`);
 
-                // エントロピー符号化
-
-                // ハフマンテーブル定義
-                case JpegMarker.DHT:
-                    this._parseDHT();
-                    break;
-
-                // 算術符号化条件定義
-                case JpegMarker.DAC:
-                    this._parseDAC();
-                    break;
-
-                // テーブル/その他のマーカー
-
                 // スキャン開始
                 case JpegMarker.SOS:
                     this._parseSOS();
+                    break;
+
+                // 階層プログレス定義
+                case JpegMarker.DHP:
+                    this._parseSOF(marker);
                     break;
 
                 // ライン数定義
@@ -149,9 +136,14 @@ export class JpegDecoder {
                     this._parseDQT();
                     break;
 
-                // 階層プログレス定義
-                case JpegMarker.DHP:
-                    this._parseSOF(marker);
+                // ハフマンテーブル定義
+                case JpegMarker.DHT:
+                    this._parseDHT();
+                    break;
+
+                // 算術符号化条件定義
+                case JpegMarker.DAC:
+                    this._parseDAC();
                     break;
 
                 // リスタートインターバル定義
@@ -199,7 +191,7 @@ export class JpegDecoder {
 
         if (marker === JpegMarker.SOF0 && segment.P !== 8) {
             // ベースラインで8bitでない場合
-            throw new JpegDecodeError();
+            throw new JpegDecodeError("This frame segment has been broken.");
         } else if ((marker === JpegMarker.SOF1 || marker === JpegMarker.SOF2) &&
             (segment.P !== 8 && segment.P !== 12)) {
             // 拡張シーケンシャルもしくはプログレッシブで8bitでなく12bitでもない場合
@@ -425,7 +417,7 @@ export class JpegDecoder {
     }
 
     /**
-     * スキャンデータをハフマン符号化を使用してデコードする。
+     * スキャンデータをハフマン符号化を用いてデコード
      */
     _decodeScanDataWithHuffmanCoding(segment) {
         let isDebugging = isDebuggingSOS && isDebuggingSOSDetail;
@@ -498,7 +490,7 @@ export class JpegDecoder {
     }
 
     /**
-     * ユニットデータをハフマン符号化を使用してデコードする。
+     * ユニットデータをハフマン符号化を用いてデコード
      */
     _decodeUnitWithHuffmanCoding(segment, scanWork, dcHuffmanTree, acHuffmanTree, component, unit) {
         let isDebugging = isDebuggingSOS && isDebuggingSOSDetail;
@@ -658,7 +650,7 @@ export class JpegDecoder {
     }
 
     /**
-     * スキャンデータを画像にデコードする。
+     * スキャンデータを画像にデコード
      */
     _decodeImageWithScanData() {
         let width = this._frame.width;
@@ -736,6 +728,60 @@ export class JpegDecoder {
         if (this._callback) {
             this._callback("decodeImage", this.out);
         }
+    }
+
+    /**
+     * ライン数定義セグメントの解析
+     */
+    _parseDNL() {
+        let segment = {};
+
+        // Ld: (Define number of lines segment length)
+        segment.Nd = this._stream.readUint16();
+        if (segment.Nd !== 4) {
+            throw new JpegDecodeError();
+        }
+
+        // NL: (Number of lines)
+        segment.NL = this._stream.readUint16();
+
+        if (this._frame !== null) {
+            this._frame.height = segment.NL;
+        }
+
+        if (isDebuggingDNL) {
+            console.log("DNL");
+            console.log(segment);
+        }
+
+        return segment;
+    }
+
+    /**
+     * 伸張リファレンスコンポーネントセグメントの解析
+     */
+    _parseEXP() {
+        let segment = {};
+
+        // Le: (Expand reference components segment length)
+        segment.Le = this._stream.readUint16();
+        if (segment.Le !== 3) {
+            throw new JpegDecodeError();
+        }
+
+        // Eh: (Expand horizontally)
+        let Eh_Ev = this._stream.readUint8();
+        segment.Eh = (Eh_Ev & 0xf0) >>> 4;
+
+        // Ev: (Expand vertically)
+        segment.Ev = Eh_Ev & 0x0f;
+
+        if (isDebuggingEXP) {
+            console.log("EXP");
+            console.log(segment);
+        }
+
+        return segment;
     }
 
     /**
@@ -880,7 +926,7 @@ export class JpegDecoder {
     }
 
     /**
-     * ハフマンテーブルをツリーにデコードする
+     * ハフマンテーブルを取り扱いやすい構造にデコード
      */
     _decodeHuffmanTables(table) {
         let isDebugging = isDebuggingDHT && isDebuggingDHTDetail;
@@ -940,7 +986,7 @@ export class JpegDecoder {
                     }
                 } else {
                     // 未定義
-                    throw new JpegDecodeError(`Huffman table have been broken at ${k}.`);
+                    throw new JpegDecodeError(`Huffman table have been broken.`);
                 }
                 code++;
             }
@@ -952,7 +998,7 @@ export class JpegDecoder {
     }
 
     /**
-     * ハフマン符号化された値を読み込む
+     * ハフマン符号化された値を読み込み
      */
     _readValueWithHuffmanCode(huffmanTree) {
         // ハフマンコードを検索
@@ -1029,60 +1075,6 @@ export class JpegDecoder {
 
         if (isDebuggingDAC) {
             console.log("DAC");
-            console.log(segment);
-        }
-
-        return segment;
-    }
-
-    /**
-     * ライン数定義セグメントの解析
-     */
-    _parseDNL() {
-        let segment = {};
-
-        // Ld: (Define number of lines segment length)
-        segment.Nd = this._stream.readUint16();
-        if (segment.Nd !== 4) {
-            throw new JpegDecodeError();
-        }
-
-        // NL: (Number of lines)
-        segment.NL = this._stream.readUint16();
-
-        if (this._frame !== null) {
-            this._frame.height = segment.NL;
-        }
-
-        if (isDebuggingDNL) {
-            console.log("DNL");
-            console.log(segment);
-        }
-
-        return segment;
-    }
-
-    /**
-     * 伸張リファレンスコンポーネントセグメントの解析
-     */
-    _parseEXP() {
-        let segment = {};
-
-        // Le: (Expand reference components segment length)
-        segment.Le = this._stream.readUint16();
-        if (segment.Le !== 3) {
-            throw new JpegDecodeError();
-        }
-
-        // Eh: (Expand horizontally)
-        let Eh_Ev = this._stream.readUint8();
-        segment.Eh = (Eh_Ev & 0xf0) >>> 4;
-
-        // Ev: (Expand vertically)
-        segment.Ev = Eh_Ev & 0x0f;
-
-        if (isDebuggingEXP) {
-            console.log("EXP");
             console.log(segment);
         }
 

@@ -16,9 +16,9 @@ export function rgbToYcbcr(dst, dstOff, src, srcOff) {
 
 /**
  * YCbCrをRGBに変換する
- * @param {number[]} dst 出力先
+ * @param {number[]|Float32Array|Float64Array} dst 出力先
  * @param {uint} dstOff 出力先の配列オフセット
- * @param {number[]} src 入力元
+ * @param {number[]|Float32Array|Float64Array} src 入力元
  * @param {uint} srcOff 入力元の配列オフセット
  */
 export function ycbcrToRgb(dst, dstOff, src, srcOff) {

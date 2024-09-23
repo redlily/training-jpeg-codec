@@ -2,123 +2,99 @@
  * JPEGのマーカーの定義をまとめたクラス
  */
 export class JpegMarker {
-    //
-    // 画像の開始/終了マーカー
-    //
-
-    /** Start of image. 画像の開始 */
-    static get SOI() {
-        return 0xFFD8;
-    }
-
-    /** End of image. 画像の終了 */
-    static get EOI() {
-        return 0xFFD9;
-    }
-
-    //
-    // フレームの開始マーカー、非差分、ハフマン符号化
-    //
+    // Start Of Frame markers, non-differential, Huffman coding. フレームの開始マーカー、非差分、ハフマン符号化
 
     /** Baseline DCT. ベースラインDCT */
     static get SOF0() {
         return 0xFFC0;
     }
 
-    /** Extended sequential DCT. 拡張シーケンシャルDCT */
+    /** Extended sequential DCT. 拡張シーケンシャルDCT、ハフマン符号化 */
     static get SOF1() {
         return 0xFFC1;
     }
 
-    /** Progressive DCT. プログレッシブDCT */
+    /** Progressive DCT. プログレッシブDCT、ハフマン符号化 */
     static get SOF2() {
         return 0xFFC2;
     }
 
-    /** Lossless (sequential). 可逆圧縮*/
+    /** Lossless (sequential). 可逆圧縮 (シーケンシャル)、ハフマン符号化 */
     static get SOF3() {
         return 0xFFC3;
     }
 
-    //
-    // フレームの開始マーカー、差分、ハフマン符号化
-    //
+    // Start Of Frame markers, differential, Huffman coding. フレームの開始マーカー、差分、ハフマン符号化
 
-    /** Differential sequential DCT. 差分シーケンシャルDCT */
+    /** Differential sequential DCT. 差分シーケンシャルDCT、ハフマン符号化 */
     static get SOF5() {
         return 0xFFC5;
     }
 
-    /** Differential progressive DCT. 差分プログレッシブDCT */
+    /** Differential progressive DCT. 差分プログレッシブDCT、ハフマン符号化 */
     static get SOF6() {
         return 0xFFC6;
     }
 
-    /** Differential lossless (sequential). 差分可逆圧縮 (シーケンシャル) */
+    /** Differential lossless (sequential). 差分可逆圧縮 (シーケンシャル)、ハフマン符号化 */
     static get SOF7() {
         return 0xFFC7;
     }
 
-    //
-    // フレームの開始マーカー、非差分、算術符号化
-    //
+    // Start Of Frame markers, non-differential, arithmetic coding. フーレムの開始マーカー、非差分、算術符号化
 
-    /** Reserved for JPEG extensions. 予約済みのJPEG拡張 */
+    /** Reserved for JPEG extensions. 予約済みのJPEG拡張、算術符号化 */
     static get JPG() {
         return 0xFFC8;
     }
 
-    /** Extended sequential DCT. 拡張シーケンシャルDCT */
+    /** Extended sequential DCT. 拡張シーケンシャルDCT、算術符号化 */
     static get SOF9() {
         return 0xFFC9;
     }
 
-    /** Progressive DCT. プログレッシブDCT */
+    /** Progressive DCT. プログレッシブDCT、算術符号化 */
     static get SOF10() {
         return 0xFFCA;
     }
 
-    /** Lossless (sequential). 可逆圧縮 */
+    /** Lossless (sequential). 可逆圧縮 (シーケンシャル)、算術符号化 */
     static get SOF11() {
         return 0xFFCB;
     }
 
-    //
-    // フレームの開始マーカー、差分、算術符号化
-    //
+    // Start Of Frame markers, differential, arithmetic coding. フレームの開始マーカー、差分、算術符号化
 
-    /** Differential sequential DCT. 差分シーケンシャルDCT */
+    /** Differential sequential DCT. 差分シーケンシャルDCT、算術符号化 */
     static get SOF13() {
         return 0xFFCD;
     }
 
-    /** Differential progressive DCT. 差分プログレッシブDCT */
+    /** Differential progressive DCT. 差分プログレッシブDCT、算術符号化 */
     static get SOF14() {
         return 0xFFCE;
     }
 
-    /** Differential lossless (sequential). 差分可逆圧縮 */
+    /** Differential lossless (sequential). 差分可逆圧縮 (シーケンシャル)、算術符号化 */
     static get SOF15() {
         return 0xFFCF;
     }
 
-    //
-    // エントロピー符号化
-    //
+    // Huffman table specification. ハフマンテーブルの仕様
 
-    /** Define Huffman table(s). ハフマンテーブル */
+    /** Define Huffman table(s). ハフマンテーブルの定義 */
     static get DHT() {
         return 0xFFC4;
     }
 
-    /** Define arithmetic coding conditioning(s). 算術符号化コンディショニングの定義 */
+    // Arithmetic coding conditioning specification. 算術符号化の仕様
+
+    /** Define arithmetic coding conditioning(s). 算術符号化条件の定義 */
     static get DAC() {
         return 0xFFCC;
     }
 
-    //
-    // リスタートインターバルの終端子
-    //
+    // Restart interval termination. リスタートインターバル終端
 
     /** Restart with modulo 8 count "n". 0xFFD0 through 0xFFD7 リスタート */
     static get RSTn() {
@@ -130,23 +106,21 @@ export class JpegMarker {
         return 0xFFD7;
     }
 
-    //
-    // テーブル/その他のマーカー
-    //
+    // Other markers. その他マーカー
+
+    /** Start of image. 画像の開始 */
+    static get SOI() {
+        return 0xFFD8;
+    }
+
+    /** End of image. 画像の終了 */
+    static get EOI() {
+        return 0xFFD9;
+    }
 
     /** Start of scan. スキャンの開始 */
     static get SOS() {
         return 0xFFDA;
-    }
-
-    /** Define number of lines. ライン数 */
-    static get DNL() {
-        return 0xFFDC;
-    }
-
-    /** Expand reference components(s). 伸張リファレンスコンポーネント */
-    static get EXP() {
-        return 0xFFDF;
     }
 
     /** Define quantization table(s). 量子化テーブル定義 */
@@ -154,9 +128,9 @@ export class JpegMarker {
         return 0xFFDB;
     }
 
-    /** Define hierarchical progression. 階層プログレス定義 */
-    static get DHP() {
-        return 0xFFDE;
+    /** Define number of lines. ライン数 */
+    static get DNL() {
+        return 0xFFDC;
     }
 
     /** Define restart interval. リスタートインターバルの定義 */
@@ -164,9 +138,14 @@ export class JpegMarker {
         return 0xFFDD;
     }
 
-    /** Comment. コメント */
-    static get COM() {
-        return 0xFFFE;
+    /** Define hierarchical progression. 階層プログレスの定義 */
+    static get DHP() {
+        return 0xFFDE;
+    }
+
+    /** Expand reference components(s). 伸張リファレンスコンポーネント */
+    static get EXP() {
+        return 0xFFDF;
     }
 
     /** Reserved for application segments. 0xFFE0 through 0xFFEF 予約済みのアプリケーションセグメント */
@@ -189,9 +168,12 @@ export class JpegMarker {
         return 0xFFFD;
     }
 
-    //
-    // 予約済みマーカー
-    //
+    /** Comment. コメント */
+    static get COM() {
+        return 0xFFFE;
+    }
+
+    // Reserved markers. 予約マーカー
 
     /** For temporary private use in arithmetic coding. 算術符号化で使用する一時的領域 */
     static get TEM() {
