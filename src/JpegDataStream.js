@@ -96,7 +96,7 @@ export class JpegReadStream {
 
     /**
      * 符号なしの8bitの整数の配列を読み込む
-     * @param {uint[]} dst 出力先
+     * @param {Uint8Array} dst 出力先
      * @param {uint} off 出力先の配列オフセット
      * @param {uint} len 読み込み長
      */

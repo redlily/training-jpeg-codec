@@ -386,6 +386,8 @@ JPEGは1992年に発表された画像フォーマットであり、その当初
 
 #### ジグザグシーケンス
 
+[A.3.6 Zig-zag sequence](https://www.w3.org/Graphics/JPEG/itu-t81.pdf#page=32)
+
 まずは8×8の2次元配列のユニット単体に対しどのような順番でデータを出力するのかを解説します。
 
 データを順次出力しレンダリングを行う関係上、人の目にとって情報の重みが重い低い周波数のデータから情報の重みが軽い高い周波数に向かって順番に出力するために図のようにジグザグにデータの転送を行います。これをJPEGの仕様ではジグザグシーケンスと読んでいます。
@@ -449,6 +451,8 @@ export function reorderZigzagSequence(dst, src) {
 
 こちらの図は一例となり何をどのような順序で転送を行うかに関してはプログレッシブのデータ制御によります。
 
+[Figure G.1 – Spectral selection and successive approximation progressive processes](https://www.w3.org/Graphics/JPEG/itu-t81.pdf#page=124)
+
 #### コンポーネント
 
 各要素をJPEGではコンポーネントと呼びます。基本的な仕様ではコンポーネント1が輝度 (Y) 、コンポーネント2が青 - 輝度 (Cb) 、コンポーネント3が赤 - 輝度 (Cr) となります。
@@ -475,11 +479,15 @@ export function reorderZigzagSequence(dst, src) {
 
 #### インターリーブ
 
+[4.8.1 Interleaving multiple components](https://www.w3.org/Graphics/JPEG/itu-t81.pdf#page=23)
+
 1回のスキャンで複数の色情報を転送する方式になります。この際、色の間引きを行っている際、各コンポーネントのユニット数が一致しなくなるので後述する最小符号化単位 (MCU) により
 
 <img src="./assets/間引きなしのインターリブの例.png">
 
 ##### 最小符号化単位
+
+[4.8.2 Minimum coded unit](https://www.w3.org/Graphics/JPEG/itu-t81.pdf#page=25)
 
 JPEGでは画像の左上の処理単位から水平方向に右に向かって順々にデータを書き出し右端に到達したら1行下のデータを順々にデータを書き出し左下に到達したら書き出し終了となります。
 
@@ -614,197 +622,50 @@ JPEGのではハフマンテーブルと呼ばれており実際には下記の�
 - SOF (Start of frame marker: フレームスタートマーカー)
 - SOS (Start of scan marker: スキャンマーカー)
 
-#### データストリームの実装
+JPEGのデータはSOIマーカーから始まりEOIマーカーで終わります。
 
-定義
+### マーカー定義
 
-```JavaScript
-/**
- * JPEGのデータ読み込み用のデータストリームクラス
- */
-class JpegReadStream {
-    /**
-     * コンストラクタ
-     * @param {ArrayBuffer} buffer データ
-     * @param {uint?} offset データオフセット
-     * @param {uint?} length データ長
-     */
-    constructor(buffer, offset = undefined, length = undefined) { ... }
-    
-    /**
-     * ストリームを指定するバイト数スキップする
-     * @param size スキップするバイト数
-     */
-    skip(size) { ... }
+[Table B.1 – Marker code assignments](https://www.w3.org/Graphics/JPEG/itu-t81.pdf#page=36)
 
-    /**
-     * 符号なしの8bitの整数を読み込む
-     * @return 読み込んだデータ
-     */
-    readUint8() { ... }
+|マーカー|値|説明|
+|:--|:--|:--|
+|SOF0|0xFFC0|ハフマン符号化を用いた差分なしベースラインDCT|
+|SOF1|0xFFC1|ハフマン符号化を用いた差分なし拡張シーケンシャルDCT|
+|SOF2|0xFFC2|ハフマン符号化を用いた差分なしプログレッシブDCT|
+|SOF3|0xFFC3|ハフマン符号化を用いた差分なし可逆圧縮 (シーケンシャル)|
+|SOF5|0xFFC5|ハフマン符号化を用いた差分シーケンシャルDCT|
+|SOF6|0xFFC6|ハフマン符号化を用いた差分プログレッシブDCT|
+|SOF7|0xFFC7|ハフマン符号化を用いた差分可逆圧縮 (シーケンシャル)|
+|JPG|0xFFC8|予約済みのJPEG拡張|
+|SOF9|0xFFC9|算術符号化を用いた差分なし拡張シーケンシャルDCT|
+|SOF10|0xFFCA|算術符号化を用いた差分なしプログレッシブDCT|
+|SOF11|0xFFCB|算術符号化を用いた差分なし可逆圧縮 (シーケンシャル)|
+|SOF13|0xFFCD|算術符号化を用いた差分シーケンシャルDCT|
+|SOF14|0xFFCE|算術符号化を用いた差分プログレッシブDCT|
+|SOF15|0xFFCF|算術符号化を用いた差分可逆圧縮 (シーケンシャル)|
+|DHT|0xFFC4|ハフマンテーブル定義|
+|DAC|0xFFCC|算術符号化条件定義|
+|RSTm|0xFFD0～0xFFD7|リスタート|
+|SOI|0xFFD8|イメージ開始|
+|EOI|0xFFD9|イメージ終了|
+|SOS|0xFFDA|スキャン開始|
+|DQT|0xFFDB|量子化テーブル定義|
+|DNL|0xFFDC|ライン数定義|
+|DRI|0xFFDD|リセットインターバル定義|
+|DHP|0xFFDE|階層プログレッシブ定義|
+|EXP|0xFFDF|拡張リファレンスコンポーネント|
+|APPn|0xFFE0～0xFFEF|アプリケーションセグメントの予約|
+|JPGn|0xFFF0～0xFFFD|JPEGの拡張の予約|
+|COM|0xFFFE|コメント|
+|TEM|0xFF01|算術符号化の一時領域|
+|RES|0xFF02～0xFFBF|予約済み|
 
-    /**
-     * 符号なしの16bitの整数を読み込む
-     * @return 読み込んだデータ
-     */
-    readUint16() { ... }
+### DQTセグメントの解析
 
-    /**
-     * 符号なしの8bitの整数の配列を読み込む
-     * @param dst 出力先
-     * @param off 出力先の配列オフセット
-     * @param len 読み込み長
-     */
-    readUint8Array(dst, off, len) { ... }
+### DHTセグメントの解析
 
-    /**
-     * 指定長のビット配列を読み込む
-     * @param len 読み込み長
-     * @return 読み込んだデータ
-     */
-    readBits(len) { ... }
-
-    /**
-     * 内部で保留しているビット配列を破棄する
-     */
-    resetRemainBits() { ... }
-}
-```
-
-<details>
-<summary>実装例</summary>
-
-```JavaScript
-/**
- * JPEGのデータ読み込み用のデータストリームクラス
- */
-class JpegReadStream {
-    /**
-     * コンストラクタ
-     * @param {ArrayBuffer} buffer データ
-     * @param {uint?} offset データオフセット
-     * @param {uint?} length データ長
-     */
-    constructor(buffer, offset = undefined, length = undefined) {
-        this._view = new DataView(buffer, offset, length);
-        this._off = 0;
-        this._remainBits = 0;
-        this._remainBitsCount = 0;
-    }
-
-    /**
-     * ストリームを指定するバイト数スキップする
-     * @param {uint} size スキップするバイト数
-     */
-    skip(size) {
-        this._off += size;
-    }
-
-    /**
-     * 符号なしの8bitの整数を読み込む
-     * @return {uint} 読み込んだデータ
-     */
-    readUint8() {
-        let value = this._view.getUint8(this._off);
-        this._off += 1;
-        return value;
-    }
-
-    /**
-     * 符号なしの16bitの整数を読み込む
-     * @return {uint} 読み込んだデータ
-     */
-    readUint16() {
-        let value = this._view.getUint16(this._off);
-        this._off += 2;
-        return value;
-    }
-
-    /**
-     * 符号なしの8bitの整数の配列を読み込む
-     * @param {uint[]} dst 出力先
-     * @param {uint} off 出力先の配列オフセット
-     * @param {uint} len 読み込み長
-     */
-    readUint8Array(dst, off, len) {
-        len = Math.min(len, this._view.byteLength - this._off);
-        for (let i = 0; i < len; ++i) {
-            dst[off + i] = this._view.getUint8(this._off);
-            this._off += 1;
-        }
-        return len;
-    }
-
-    /**
-     * 指定長のビット配列を読み込む
-     * @param {uint} len 読み込み長
-     * @return {uint} 読み込んだデータ
-     */
-    readBits(len) {
-        // 0bitの場合
-        if (len === 0) {
-            return 0;
-        }
-
-        // 読み込み要求されているビット数が内部保留のビット数より小さい場合
-        if (len <= this._remainBitsCount) {
-            let result = this._remainBits >>> (this._remainBitsCount - len);
-            this._remainBitsCount -= len;
-            this._remainBits &= 0xff >>> (8 - this._remainBitsCount);
-            return result;
-        }
-
-        // 読み込み要求されているビット数が内部保留のビット数より大きい場合
-        let result = this._remainBits;
-        len -= this._remainBitsCount;
-        this._remainBits = 0;
-        this._remainBitsCount = 0;
-        while (len >= 8) {
-            let bits = this._readUnit8ForReadingBits();
-            result = (result << 8) | bits;
-            len -= 8;
-        }
-        if (len > 0) {
-            this._remainBits = this._readUnit8ForReadingBits();
-            this._remainBitsCount = 8 - len;
-            result = (result << len) | (this._remainBits >>> this._remainBitsCount);
-            this._remainBits &= 0xff >>> (8 - this._remainBitsCount);
-        }
-        return result;
-    }
-
-    /**
-     * ビットストリーム用に符号なし8bitの整数を読み込み
-     */
-    _readUnit8ForReadingBits() {
-        let bits = this.readUint8();
-        if (bits === 0xff) {
-            // ビットストリームは読み込んだバイトの値が FF の場合は 00 である必要がある
-            let next = this.readUint8();
-            if (next !== 0) {
-                throw new JpegDataStreamError("This data stream has been broken.");
-            }
-        }
-        return bits;
-    }
-
-    /**
-     * 内部で保留しているビット配列を破棄する
-     */
-    resetRemainBits() {
-        this._remainBits = 0;
-        this._remainBitsCount = 0;
-    }
-}
-```
-
-</details>
-
-##### ビットデータストリームの実装
-
-JPEGのデータはセグメントのメタデータは基本的に16bit, 8bit単位で読み書きを行います。しかしエントロピー符号化されたデータに関してはデータ容量の効率を重視したものになりビット単位でのデータアクセスが求められます。
-
-そこでデータ解析に先立ってJPEGのビットデータストリームの解説を行いたいと思います。
+#### ビットデータストリームの実装
 
 ```JavaScript
 /**
@@ -861,329 +722,12 @@ _readUnit8ForReadingBits() {
 }
 
 /**
- * 
+ * 内部で保留しているビット配列を破棄する
  */
-```
-
-#### マーカー定義
-
-JPEGの基本仕様で定義されているマーカーは下記になります。
-
-|マーカー名|名称|値|説明|
-|:--|:--|:--|:--|
-|SOF0|Baseline DCT|0xFFC0|ハフマン符号化を用いた差分なしベースラインDCT|
-|SOF1|Extended sequential DCT|0xFFC1|ハフマン符号化を用いた差分なし拡張シーケンシャルDCT|
-|SOF2|Progressive DCT|0xFFC2|ハフマン符号化を用いた差分なしプログレッシブDCT|
-|SOF3|Lossless (sequential)|0xFFC3|ハフマン符号化を用いた差分なし可逆圧縮 (シーケンシャル)|
-|SOF5|Differential sequential DCT|0xFFC5|ハフマン符号化を用いた差分シーケンシャルDCT|
-|SOF6|Differential progressive DCT|0xFFC6|ハフマン符号化を用いた差分プログレッシブDCT|
-|SOF7|Differential lossless (sequential)|0xFFC7|ハフマン符号化を用いた差分可逆圧縮 (シーケンシャル)|
-|JPG|Reserved for JPEG extensions|0xFFC8|予約済みのJPEG拡張|
-|SOF9|Extended sequential DCT|0xFFC9|算術符号化を用いた差分なし拡張シーケンシャルDCT|
-|SOF10|Progressive DCT|0xFFCA|算術符号化を用いた差分なしプログレッシブDCT|
-|SOF11|Lossless (sequential)|0xFFCB|算術符号化を用いた差分なし可逆圧縮 (シーケンシャル)|
-
-
-```JavaScript
-/**
- * JPEGのマーカーの定義をまとめたクラス
- */
-export class JpegMarker {
-
-    // フレームの開始マーカー、差分、ハフマン符号化
-
-    // フレームの開始マーカー、非差分、算術符号化
-
-    // フレームの開始マーカー、差分、算術符号化
-
-    /** 差分シーケンシャルDCT */
-    static get SOF13() { return 0xFFCD; }
-
-    /** 差分プログレッシブDCT */
-    static get SOF14() { return 0xFFCE; }
-
-    /** 差分可逆圧縮 */
-    static get SOF15() { return 0xFFCF; }
-
-    // ハフマンテーブルの仕様
-
-    /** ハフマンテーブル */
-    static get DHT() { return 0xFFC4; }
-
-    // 算術符号化の仕様
-
-    /** 算術符号化コンディショニングの定義 */
-    static get DAC() { return 0xFFCC; }
-
-    // リスタートインターバルの終端子
-
-    /** リスタート */
-    static get RSTn() { return 0xFFD0; }
-
-    /** リスタート */
-    static get RSTn_end() { return 0xFFD7; }
-
-    // その他のマーカー
-
-    /** 画像の開始 */
-    static get SOI() { return 0xFFD8; }
-
-    /** 画像の終了 */
-    static get EOI() { return 0xFFD9; }
-
-    /** スキャンの開始 */
-    static get SOS() { return 0xFFDA; }
-
-    /** 量子化テーブルの定義 */
-    static get DQT() { return 0xFFDB; }
-
-    /** ライン数の定義 */
-    static get DNL() { return 0xFFDC; }
-
-    /** リスタートインターバルの定義 */
-    static get DRI() { return 0xFFDD; }
-
-    /** 階層プログレスの定義 */
-    static get DHP() { return 0xFFDE; }
-
-    /** 伸張リファレンスの定義 */
-    static get EXP() { return 0xFFDF; }
-    
-    /** コメント */
-    static get COM() { return 0xFFFE; }
-
-    /** 予約済みのアプリケーションセグメント */
-    static get APPn() { return 0xFFE0; }
-
-    /** 予約済みのアプリケーションセグメント */
-    static get APPn_end() { return 0xFFEF; }
-
-    /** 予約済みのJPEG拡張 */
-    static get JPGn() { return 0xFFF0; }
-
-    /** 予約済みのJPEG拡張 */
-    static get JPGn_end() { return 0xFFFD; }
-
-    // 予約済みマーカー
-
-    /** 算術符号化で使用する一時的領域 */
-    static get TEM() { return 0xFF01; }
-
-    /** 予約済み */
-    static get RESn() { return 0xFF02; }
+resetRemainBits() {
+    this._remainBits = 0;
+    this._remainBitsCount = 0;
 }
-
-```
-
-### デコーダーの実装
-
-```JavaScript
-/**
- * JPEGのデコーダー
- */
-class JpegDecoder {
-    /**
-     * JPEGのデコードを行う
-     */
-    decode(callback) {
-        this._callback = callback;
-
-        // SOI: イメージ開始マーカー
-        let soiMarker = this._stream.readUint16();
-        if (soiMarker !== JpegMarker.SOI) {
-            return false;
-        }
-
-        while (true) {
-            let marker = this._stream.readUint16();
-            switch (marker) {
-                // SOFマーカー
-
-                // SOF0: ベースDCT (Baseline DCT)
-                case JpegMarker.SOF0:
-                // SOF1: 拡張シーケンシャルDCT、ハフマン符号 (Extended sequential DCT, Huffman coding)
-                case JpegMarker.SOF1:
-                // SOF2: プログレッシブDCT、ハフマン符号 (Progressive DCT, Huffman coding)
-                case JpegMarker.SOF2:
-                    this._parseSOF(marker);
-                    break;
-
-                // SOF3: 可逆圧縮 (シーケンシャル)、ハフマン符号 (Lossless (sequential), Huffman coding)
-                case JpegMarker.SOF3:
-
-                // SOFマーカー (非対応)
-
-                // SOF9: 拡張シーケンシャルDCT、算術符号 (Extended sequential DCT, arithmetic coding)
-                case JpegMarker.SOF9:
-                // SOF10: プログレッシブDCT、算術符号 (Progressive DCT, arithmetic coding)
-                case JpegMarker.SOF10:
-                // SOF11: 可逆圧縮、算術符号 (Lossless (sequential), arithmetic coding)
-                case JpegMarker.SOF11:
-
-                // 拡張用SOF
-
-                // Differential sequential DCT
-                case JpegMarker.SOF5:
-                // Differential progressive DCT
-                case JpegMarker.SOF6:
-                // Differential lossless (sequential)
-                case JpegMarker.SOF7:
-                // Differential sequential DCT
-                case JpegMarker.SOF13:
-                // Differential progressive DCT
-                case JpegMarker.SOF14:
-                // Differential lossless (sequential)
-                case JpegMarker.SOF15:
-                    throw new JpegDecodeError(`Unsupported SOF${marker - JpegMarker.SOF0} marker`);
-
-                // SOS: Start of scan marker
-                case JpegMarker.SOS:
-                    this._parseSOS();
-                    break;
-
-                // DQT: 量子化テーブル (Define quantization table marker)
-                case JpegMarker.DQT:
-                    this._parseDQT();
-                    break;
-
-                // DHT: ハフマンテーブル (Define Huffman table marker)
-                case JpegMarker.DHT:
-                    this._parseDHT();
-                    break;
-
-                // DAC: Define arithmetic coding conditioning marker
-                case JpegMarker.DAC:
-                    this._parseDAC();
-                    break;
-
-                // DHP: (hierarchical progression marker)
-                case JpegMarker.DHP:
-                    this._parseSOF(marker);
-                    break;
-
-                // EXP: (Expand reference components marker)
-                case JpegMarker.EXP:
-                    this._parseEXP();
-                    break;
-
-                // DNL: (Define number of lines marker)
-                case JpegMarker.DNL:
-                    this._parseDNL();
-                    break;
-
-                // DRI: リスタートマーカー (Define restart interval marker)
-                case JpegMarker.DRI:
-                    this._parseDRI();
-                    break;
-
-                // COM: コメントマーカ (Comment marker)
-                case JpegMarker.COM:
-                    this._parseCOM();
-                    break;
-
-                // EOI: エンドマーカ (End of image)
-                case JpegMarker.EOI:
-                    if (isDebuggingEOI) {
-                        console.log("EOI");
-                    }
-                    return true;
-
-                default:
-                    if (marker >= JpegMarker.APPn && marker <= JpegMarker.APPn_end) {
-                        // APPn: アプリケーションデータマーカー
-                        this._parseAPP(marker);
-                    } else if (marker >= JpegMarker.JPGn && marker <= JpegMarker.JPGn_end) {
-                        // JPGn: JPEG拡張マーカー
-                        this._stream.skip(this._stream.readUint16() - 2);
-                        console.info(`Unsupported JPEG extension marker: ${marker.toString(16)}`);
-                    } else if ((marker & 0xff00) !== 0xff00) {
-                        // 不明、未実装マーカー
-                        this._stream.skip(this._stream.readUint16() - 2);
-                        console.info(`Unknown marker: ${marker.toString(16)}`);
-                    } else {
-                        // マーカーでない
-                        console.info(`Not marker: ${marker.toString(16)}`);
-                        return false;
-                    }
-            }
-        }
-    }
-
-    /**
-     * フレームの開始セグメントの解析
-     */
-    _parseSOF(marker) { ... }
-
-    /**
-     * スキャン開始セグメントの解析
-     */
-    _parseSOS() { ... }
-
-    /**
-     * 量子化テーブル定義セグメントの解析
-     */
-    _parseDQT() { ... }
-
-    /**
-     * ハフマンテーブル定義セグメントの解析
-     */
-    _parseDHT() { ... }
-
-    /**
-     * 算術符号化条件定義セグメントの解析
-     */
-    _parseDAC() { ... }
-
-    /**
-     * 伸張リファレンスコンポーネントセグメントの解析
-     */
-    _parseEXP() { ... }
-
-    /**
-     * ライン数定義セグメントの解析
-     */
-    _parseDNL() { ... }
-
-    /**
-     * リスタートインターバル定義セグメントの解析
-     */
-    _parseDRI() {
-
-    /**
-     * コメントセグメントの解析
-     */
-    _parseCOM() { ... }
-
-    /**
-     * アプリケーションデータセグメントの解析
-     */
-    _parseAPP(marker) { ... }
-}
-```
-
-### DQT
-
-### DHT
-
-### SOF
-
-|パラメータ|サイズ (bit)|ベースライン|拡張シーケンシャル|プログレッシブ|説明|
-|:--------|:----------|:--|:--|:--|:--|
-|Lf|16|8 + 3 × Nf|〃|〃|フレームヘッダー長|
-|P|8|8|8,12|8,12|サンプル精度 (ビット数)|
-|Y|16|0～65535|〃|〃|ライン数 (縦のサイズ)|
-|X|16|1～65535|〃|〃|ラインあたりのサンプル数 (横のサイズ)|
-|Nf|8|1～255|1～255|1～4|フレームのコンポーネント数|
-|C_i|8|0～255|〃|〃|コンポーネント識別子|
-|H_i|4|1～4|〃|〃|水平方向のサンプリング|
-|V_i|4|1～4|〃|〃|垂直方向のサンプリング|
-|Tq_i|8|0～3|〃|〃|量子化テーブルセレクター|
-
-### SOS
-
-### ハフマン符号化
-
-```JavaScript
 ```
 
 #### マグニチュードカテゴリ
@@ -1207,6 +751,24 @@ class JpegDecoder {
 |13|–8191～–4 096, 4096～8191|
 |14|–16383～–8 192, 8192～16383|
 
+### SOF
+
+|パラメータ|サイズ (bit)|ベースライン|拡張シーケンシャル|プログレッシブ|説明|
+|:--------|:----------|:--|:--|:--|:--|
+|Lf|16|8 + 3 × Nf|〃|〃|フレームヘッダー長|
+|P|8|8|8,12|8,12|サンプル精度 (ビット数)|
+|Y|16|0～65535|〃|〃|ライン数 (縦のサイズ)|
+|X|16|1～65535|〃|〃|ラインあたりのサンプル数 (横のサイズ)|
+|Nf|8|1～255|1～255|1～4|フレームのコンポーネント数|
+|C_i|8|0～255|〃|〃|コンポーネント識別子|
+|H_i|4|1～4|〃|〃|水平方向のサンプリング|
+|V_i|4|1～4|〃|〃|垂直方向のサンプリング|
+|Tq_i|8|0～3|〃|〃|量子化テーブルセレクター|
+
+### SOS
+
+
+
 ```JavaScript
 let rawValue = 0;
 let value = 0;
@@ -1218,8 +780,6 @@ if (element.additionalBits > 0) {
         ((-1 << element.additionalBits) | rawValue) + 1 : rawValue;
 }
 ```
-
-#### 逐次近似 (ハフマン符号化用)
 
 ## サンプルプログラム
 

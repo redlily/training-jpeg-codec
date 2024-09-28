@@ -31,7 +31,13 @@ import {
 import {JpegReadStream} from "./JpegDataStream.js";
 import {ycbcrToRgb, reorderZigzagSequence} from "./JpegCommon.js";
 import {idct} from "./JpegSignal.js";
-import {checkContainsWithMarker, checkEqualsWithMaker} from "./JpegCheck.js";
+import {
+    checkContainsWithMarker,
+    checkEquals,
+    checkEqualsWithMaker,
+    checkRange,
+    checkRangeWithMarker
+} from "./JpegCheck.js";
 
 // デバッグ用のフラグ
 const isDebuggingSOF = true;
@@ -147,21 +153,6 @@ export class JpegDecoder {
                     this._parseSOS();
                     break;
 
-                // 階層プログレス定義
-                case DHP:
-                    this._parseSOF(marker);
-                    break;
-
-                // ライン数定義
-                case DNL:
-                    this._parseDNL();
-                    break;
-
-                // 拡張リファレンスコンポーネント
-                case EXP:
-                    this._parseEXP();
-                    break;
-
                 // 量子化テーブル定義
                 case DQT:
                     this._parseDQT();
@@ -185,6 +176,20 @@ export class JpegDecoder {
                 // コメント
                 case COM:
                     this._parseCOM();
+                    break;
+
+                // ライン数定義
+                case DNL:
+                    this._parseDNL();
+                    break;
+
+                // 階層プログレス定義
+                case DHP:
+                    throw new JpegDecodeError(`Unsupported DHP marker`);
+
+                // 拡張リファレンスコンポーネント
+                case EXP:
+                    this._parseEXP();
                     break;
 
                 default:
@@ -224,22 +229,16 @@ export class JpegDecoder {
 
         // Y: ライン数 (Number of lines)
         segment.Y = this._stream.readUint16();
+        checkRange(0, 65535, segment.Y);
 
         // X: ラインあたりのサンプル数 (Number of samples per line)
         segment.X = this._stream.readUint16();
-
-        if (segment.X < 1) {
-            // ライン数が1以下の場合
-            throw new JpegDecodeError("This frame segment has been broken.");
-        }
+        checkRange(1, 65535, segment);
 
         // Nf: フレームのイメージコンポーネント数 (Number of image components in frame)
         segment.Nf = this._stream.readUint8();
-        if ((marker === SOF0 || marker === SOF1) && segment.Nf < 1) {
-            throw new JpegDecodeError("This frame segment has been broken.");
-        } else if (marker === SOF2 && (segment.Nf < 1 || segment.Nf > 4)) {
-            throw new JpegDecodeError("This frame segment has been broken.");
-        }
+        checkRangeWithMarker([SOF0, SOF1], 1, 255, marker, segment.Nf);
+        checkEqualsWithMaker([SOF2], 1, 4, marker, segment.Nf);
 
         segment.components = new Array(segment.Nf);
         for (let i = 0; i < segment.Nf; ++i) {
@@ -252,22 +251,15 @@ export class JpegDecoder {
 
             // H_i: 水平方向のサンプリング数 (Horizontal sampling factor)
             component.H = 0xf & (H_V >> 4);
-            if (component.H < 1 || component.H > 4) {
-                throw new JpegDecodeError("This frame segment has been broken.");
-            }
+            checkRange(1, 4, component.H);
 
             // V_i: 垂直方向のサンプリング数 (Vertical sampling factor)
             component.V = 0xf & H_V;
-            if (component.V < 1 || component.V > 4) {
-                throw new JpegDecodeError("This frame segment has been broken.");
-            }
+            checkRange(1, 4, component.V);
 
             // Tq_i: 量子化テーブル出力セレクター (Quantization table destination selector)
             component.Tq = this._stream.readUint8();
-            if ((marker === SOF0 || marker === SOF1 || marker === SOF2) &&
-                component.Tq > 3) {
-                throw new JpegDecodeError("This frame segment has been broken.")
-            }
+            checkRangeWithMarker([SOF0, SOF1, SOF2], 0, 3, marker, component.Tq);
 
             segment.components[i] = component;
         }
@@ -319,8 +311,10 @@ export class JpegDecoder {
             let numHorizontalUnitsInComponent = numHorizontalMcusInImage * component.H;
             let numVerticalUnitsInComponent = numVerticalMcusInImage * component.V;
 
-            let numHorizontalUnitsInComponentWithoutMcu = Math.ceil(width * component.H / maxHorizontalSamplingFactor / 8);
-            let numVerticalUnitsInComponentWithoutMcu = Math.ceil(height * component.V / maxVerticalSamplingFactor / 8);
+            let numHorizontalUnitsInComponentWithoutMcu =
+                Math.ceil(width * component.H / maxHorizontalSamplingFactor / 8);
+            let numVerticalUnitsInComponentWithoutMcu =
+                Math.ceil(height * component.V / maxVerticalSamplingFactor / 8);
 
             let units = new Array(numHorizontalUnitsInComponent * numVerticalUnitsInComponent)
             for (let j = 0; j < units.length; ++j) {
@@ -390,10 +384,7 @@ export class JpegDecoder {
 
         // Ns: スキャンのイメージコンポーネント数 (Number of image components in scan)
         segment.Ns = this._stream.readUint8();
-
-        if (segment.Ns < 1 || segment.Ns > 4) {
-            throw new JpegDecodeError("This scan segment has been broken.");
-        }
+        checkRange(1, 4, segment.Ns);
 
         segment.components = new Array(segment.Ns);
         for (let j = 0; j < segment.Ns; ++j) {
@@ -401,61 +392,44 @@ export class JpegDecoder {
 
             // Cs_j: スキャンコンポーネントのセレクター (Scan component selector)
             component.Cs = this._stream.readUint8();
+            checkRange(0, 255, component.Cs);
 
             let Td_Ta = this._stream.readUint8();
 
             // Td_j: 直流エントロピーコーディングテーブルのセレクター (DC entropy coding table destination selector)
             component.Td = 0xf & (Td_Ta >> 4);
-            if (frameType === SOF0 && segment.Td > 1) {
-                throw new JpegDecodeError("This scan segment has been broken.");
-            } else if ((frameType === SOF1 || frameType === SOF2) && segment.Td > 3) {
-                throw new JpegDecodeError("This scan segment has been broken.");
-            }
+            checkRangeWithMarker([SOF0], 0, 1, frameType, component.Td);
+            checkRangeWithMarker([SOF1, SOF2], 0, 3, frameType, component.Td);
 
             // Ta_j: 交流エントロピーコーディングテーブルのセレクター (AC entropy coding table destination selector)
             component.Ta = 0xf & Td_Ta;
-            if (frameType === SOF0 && segment.Ta > 1) {
-                throw new JpegDecodeError("This scan segment has been broken.");
-            } else if ((frameType === SOF1 || frameType === SOF2) && segment.Ta > 3) {
-                throw new JpegDecodeError("This scan segment has been broken.");
-            }
+            checkRangeWithMarker([SOF0], 0, 1, frameType, component.Ta);
+            checkRangeWithMarker([SOF1, SOF2], 0, 3, frameType, component.Ta);
 
             segment.components[j] = component;
         }
 
         // Ss: スペクトルかプリディクターの開始セレクター (Start of spectral or predictor selection)
         segment.Ss = this._stream.readUint8();
-        if ((frameType === SOF0 || frameType === SOF1) && segment.Ss !== 0) {
-            throw new JpegDecodeError("This scan segment has been broken.");
-        } else if (frameType === SOF3 && segment.Ss > 63) {
-            throw new JpegDecodeError("This scan segment has been broken.");
-        }
+        checkEqualsWithMaker([SOF0, SOF1], 0, frameType, segment.Ss);
+        checkRangeWithMarker([SOF2], 0, 63, frameType, segment.Ss);
 
         // Se: スペクトルの終了セレクター (End of spectral selection)
         segment.Se = this._stream.readUint8();
-        if ((frameType === SOF0 || frameType === SOF1) && segment.Se !== 63) {
-            throw new JpegDecodeError("This scan segment has been broken.");
-        } else if (frameType === SOF3 && (segment.Ss > segment.Se && segment.Se > 63)) {
-            throw new JpegDecodeError("This scan segment has been broken.");
-        }
+        checkEqualsWithMaker([SOF0, SOF1], 63, frameType, segment.Se);
+        checkRangeWithMarker([SOF2], segment.Se, 63, frameType, segment.Se);
 
         let Ah_Al = this._stream.readUint8();
 
         // Ah: 逐次近似の上位のビットの位置 (Successive approximation bit position high)
         segment.Ah = 0xf & (Ah_Al >> 4);
-        if ((frameType === SOF0 || frameType === SOF1) && segment.Ah !== 0) {
-            throw new JpegDecodeError("This scan segment has been broken.");
-        } else if (frameType === SOF3 && segment.Ah > 13) {
-            throw new JpegDecodeError("This scan segment has been broken.");
-        }
+        checkEqualsWithMaker([SOF0, SOF1], 0, frameType, segment.Ah);
+        checkRangeWithMarker([SOF2], 0, 13, frameType, segment.Ah);
 
         // Al: 逐次近似の下位のビットの位置もしくはピットの移動値 (Successive approximation bit position low or point transform)
         segment.Al = 0xf & Ah_Al;
-        if ((frameType === SOF0 || frameType === SOF1) && segment.Al !== 0) {
-            throw new JpegDecodeError("This scan segment has been broken.");
-        } else if (frameType === SOF3 && segment.Al > 13) {
-            throw new JpegDecodeError("This scan segment has been broken.");
-        }
+        checkEqualsWithMaker([SOF0, SOF1], 0, frameType, segment.Al);
+        checkRangeWithMarker([SOF2], 0, 13, frameType, segment.Al);
 
         if (isDebuggingSOS) {
             console.log("SOS");
@@ -575,8 +549,7 @@ export class JpegDecoder {
                 if (isDebugging) {
                     console.log(
                         `0, ` +
-                        `huffmanCode=${("0000000000000000" + value.huffmanCode.toString(2))
-                            .slice(-value.numCodingBits - 1)}, ` +
+                        `huffmanCode=${("0000000000000000" + value.huffmanCode.toString(2)).slice(-value.numCodingBits - 1)}, ` +
                         `runLength=${value.runLength}, ` +
                         `additionalBits=${value.additionalBits}, ` +
                         `rawValue=${value.rawValue}, ` +
@@ -730,13 +703,13 @@ export class JpegDecoder {
                     break;
                 }
 
-                // ジグザグシーケンスの並び戻す
-                reorderZigzagSequence(unit, component.units[j]);
-
-                // 標本化
+                // 再量子化
                 for (let k = 0; k < 64; ++k) {
                     unit[k] *= quantizationTable[k];
                 }
+
+                // ジグザグシーケンスの並び戻す
+                reorderZigzagSequence(unit, component.units[j]);
 
                 // 逆離散コサイン変換
                 idct(8, unit);
@@ -781,60 +754,6 @@ export class JpegDecoder {
     }
 
     /**
-     * ライン数定義セグメントの解析
-     */
-    _parseDNL() {
-        let segment = {};
-
-        // Ld: (Define number of lines segment length)
-        segment.Nd = this._stream.readUint16();
-        if (segment.Nd !== 4) {
-            throw new JpegDecodeError();
-        }
-
-        // NL: (Number of lines)
-        segment.NL = this._stream.readUint16();
-
-        if (this._frame !== null) {
-            this._frame.height = segment.NL;
-        }
-
-        if (isDebuggingDNL) {
-            console.log("DNL");
-            console.log(segment);
-        }
-
-        return segment;
-    }
-
-    /**
-     * 伸張リファレンスコンポーネントセグメントの解析
-     */
-    _parseEXP() {
-        let segment = {};
-
-        // Le: (Expand reference components segment length)
-        segment.Le = this._stream.readUint16();
-        if (segment.Le !== 3) {
-            throw new JpegDecodeError();
-        }
-
-        // Eh: (Expand horizontally)
-        let Eh_Ev = this._stream.readUint8();
-        segment.Eh = (Eh_Ev & 0xf0) >>> 4;
-
-        // Ev: (Expand vertically)
-        segment.Ev = Eh_Ev & 0x0f;
-
-        if (isDebuggingEXP) {
-            console.log("EXP");
-            console.log(segment);
-        }
-
-        return segment;
-    }
-
-    /**
      * 量子化テーブル定義セグメントの解析
      */
     _parseDQT() {
@@ -851,71 +770,63 @@ export class JpegDecoder {
 
             // Pq: 量子化テーブルの要素の精度 (Quantization table element precision)
             table.P = (Pq_Tq & 0xf0) >>> 4;
+            checkRange(0, 1, table.P);
 
+            // Tq: 量子化テーブルの登録先の識別子 (Quantization table destination identifier)
+            table.T = Pq_Tq & 0x0f;
+            checkRange(0, 3, table.T);
+
+            // Qk: 量子化テーブルの要素 (Quantization table element)
             let quantizationTable;
             if (table.P === 0) {
                 // 8bitの精度
                 table.Q = new Uint8Array(64);
                 quantizationTable = new Uint8Array(64);
+                for (let k = 0; k < 64; ++k) {
+                    table.Q[k] = this._stream.readUint8();
+                    checkRange(1, 255, table.Q[k]);
+                }
             } else if (table.P === 1) {
                 // 16bitの精度
                 table.Q = new Uint16Array(64);
                 quantizationTable = new Uint16Array(64);
-            } else {
-                // 8bitでも16bitでもない場合
-                throw new JpegDecodeError();
-            }
-
-            // Tq: 量子化テーブルの登録先の識別子 (Quantization table destination identifier)
-            table.T = Pq_Tq & 0x0f;
-
-            // Qk: 量子化テーブルの要素 (Quantization table element)
-            if (table.P === 0) {
-                for (let k = 0; k < 64; ++k) {
-                    table.Q[k] = this._stream.readUint8();
-                }
-            } else if (table.P === 1) {
                 for (let k = 0; k < 64; ++k) {
                     table.Q[k] = this._stream.readUint16();
+                    checkRange(1, 65535, table.Q[k]);
                 }
             }
-
-            reorderZigzagSequence(quantizationTable, table.Q);
-            this._quantizationTables[table.T] = quantizationTable;
+            this._quantizationTables[table.T] = table.Q;
 
             readSize += 65 + 64 * table.P;
-
             segment.tables.push(table);
         }
 
         if (isDebuggingDQT) {
             console.log("DQT");
             console.log(segment);
-
             if (isDebuggingDQTDetail) {
-                let table = segment.tables[0];
-                console.log(`Quantization table for ${table.T === 0 ? "DC" : "AC"}.`);
-
-                let quantizationTable = new Uint16Array(64);
-                reorderZigzagSequence(quantizationTable, table.Q);
-
-                let output = [];
-                for (let i = 0; i < 64; i += 8) {
-                    output.push(Array.from(quantizationTable.slice(i, i + 8)));
+                for (let i = 0; i < segment.tables.length; ++i) {
+                    let table = segment.tables[i];
+                    let quantizationTable = new Uint16Array(64);
+                    reorderZigzagSequence(quantizationTable, table.Q);
+                    let output = [];
+                    for (let j = 0; j < 64; j += 8) {
+                        output.push(Array.from(quantizationTable.slice(j, j + 8)));
+                    }
+                    console.log(`Quantization table ${i} for ${table.T === 0 ? "DC" : "AC"}.`);
+                    console.table(output);
                 }
-                console.table(output);
             }
         }
 
         return segment;
     }
 
+
     /**
      * ハフマンテーブル定義セグメントの解析
      */
     _parseDHT() {
-        let isDebugging = isDebuggingDHT && isDebuggingDHTDetail;
-
         let segment = {};
 
         // Lh: ハフマンテーブル定義長 (Huffman table definition length)
@@ -929,30 +840,27 @@ export class JpegDecoder {
 
             // Tc: テーブルクラス (Table class)
             table.Tc = 0xf & (Tc_Th >> 4);
-
-            if (table.Tc !== 0 && table.Tc !== 1) {
-                // テーブルクラスが直流でも交流でもない
-                throw new JpegDecodeError();
-            }
+            checkRange(0, 1, table.Tc);
 
             // Th: ハフマンテーブルの識別子 (Huffman table destination identifier)
             table.Th = 0xf & Tc_Th;
-
-            if (table.Th < 0 || table.Th > 3) {
-                throw new JpegDecodeError()
-            }
+            checkRange(0, 3, table.Th);
 
             // L_i: 長さiのハフマンコード数 (Number of Huffman codes of length i)
             table.L = new Array(16);
-
             this._stream.readUint8Array(table.L, 0, 16);
+            for (let i = 0; i < 16; ++i) {
+                checkRange(0, 255, table.L[i]);
+            }
 
             // V_{i, j}: 各ハフマンコードの値 (Value associated with each Huffman code)
             table.V = new Array(16);
-
             for (let i = 0; i < 16; ++i) {
                 let L = table.L[i];
                 this._stream.readUint8Array(table.V[i] = new Array(L), 0, L);
+                for (let j = 0; j < L; ++j) {
+                    checkRange(0, 255, table.V[i][j]);
+                }
                 readSize += L;
             }
 
@@ -966,7 +874,7 @@ export class JpegDecoder {
             console.log(segment);
         }
 
-        // テーブルをより扱いやすい構造にする
+        // ハフマンテーブルをより扱いやすい構造にする
         for (let i = 0; i < segment.tables.length; ++i) {
             let table = segment.tables[i];
             this._huffmanTrees[table.Tc][table.Th] = this._decodeHuffmanTables(table);
@@ -980,9 +888,7 @@ export class JpegDecoder {
      */
     _decodeHuffmanTables(table) {
         let isDebugging = isDebuggingDHT && isDebuggingDHTDetail;
-        if (isDebugging) {
-            console.log(`Huffman table for ${table.Tc === 0 ? "DC" : "AC"}; ID ${table.Th}.`);
-        }
+        let debugTable = [];
 
         let tree = [];
         let code = 0;
@@ -999,10 +905,11 @@ export class JpegDecoder {
                         additionalBits: value,
                     };
                     if (isDebugging) {
-                        console.log(
-                            `bits=${j + 1}, ` +
-                            `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
-                            `additionalBits=${value}`);
+                        debugTable.push({
+                            "bits": j + 1,
+                            "code": ("0000000000000000" + code.toString(2)).slice(-j - 1),
+                            "additionalBits": value
+                        });
                     }
                 } else if (table.Tc === 1) {
                     // AC成分用
@@ -1021,17 +928,20 @@ export class JpegDecoder {
                             } else if (value === 0xf0) {
                                 strValue = "ZRL";
                             }
-                            console.log(
-                                `bits=${j + 1}, ` +
-                                `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
-                                `runLength=${values[k].runLength}, ` +
-                                `additionalBits=${values[k].additionalBits} (${strValue})`);
+                            debugTable.push({
+                                "bits": j + 1,
+                                "code": ("0000000000000000" + code.toString(2)).slice(-j - 1),
+                                "runLength": values[k].runLength,
+                                "additionalBits": value,
+                                "specialValue": strValue
+                            });
                         } else {
-                            console.log(
-                                `bits=${j + 1} ` +
-                                `code=${("0000000000000000" + code.toString(2)).slice(-j - 1)}, ` +
-                                `runLength=${values[k].runLength}, ` +
-                                `additionalBits=${values[k].additionalBits}`);
+                            debugTable.push({
+                                "bits": j + 1,
+                                "code": ("0000000000000000" + code.toString(2)).slice(-j - 1),
+                                "runLength": values[k].runLength,
+                                "additionalBits": value
+                            });
                         }
                     }
                 } else {
@@ -1042,6 +952,11 @@ export class JpegDecoder {
             }
             tree.push(values);
             code <<= 1;
+        }
+
+        if (isDebugging) {
+            console.log(`Huffman table for ${table.Tc === 0 ? "DC" : "AC"}; ID ${table.Th}.`);
+            console.table(debugTable);
         }
 
         return tree;
@@ -1142,7 +1057,6 @@ export class JpegDecoder {
 
         // Ri: リスタートインターバル (Restart interval)
         segment.Ri = this._stream.readUint16();
-
         this._restertInterval = segment.Ri;
 
         if (isDebuggingDRI) {
@@ -1163,10 +1077,8 @@ export class JpegDecoder {
         segment.Lc = this._stream.readUint16();
 
         // Cm: コメントバイト (Comment byte)
-        let readSize = this._stream.readUint8Array(segment.Cm = new Uint8Array(segment.Lc - 2), 0, segment.Lc - 2);
-        if (readSize !== segment.Cm.length) {
-            throw new JpegDecodeError("This comment segment has been broken.");
-        }
+        segment.Cm = new Uint8Array(segment.Lc - 2);
+        this._stream.readUint8Array(segment.Cm, 0, segment.Lc - 2);
 
         if (isDebuggingCOM) {
             console.log("COM");
@@ -1184,19 +1096,58 @@ export class JpegDecoder {
 
         // Lp: アプリケーションデータセグメント長 (Application data segment length)
         segment.Lp = this._stream.readUint16();
-        if (segment.Lp < 2) {
-            throw new JpegDecodeError();
-        }
 
         // Api: アプリケーションデータバイト (Application data byte)
         segment.Ap = new Uint8Array(segment.Lp - 2);
-        let readSize = this._stream.readUint8Array(segment.Ap, 0, segment.Ap.length);
-        if (readSize !== segment.Ap.length) {
-            throw new JpegDecodeError("This application segment has been broken.");
-        }
+        this._stream.readUint8Array(segment.Ap, 0, segment.Ap.length);
 
         if (isDebuggingAPP) {
             console.log(`APP${marker - APPn}`);
+            console.log(segment);
+        }
+
+        return segment;
+    }
+
+    /**
+     * ライン数定義セグメントの解析
+     */
+    _parseDNL() {
+        let segment = {};
+
+        // Ld: ライン数定義セグメント長 (Define number of lines segment length)
+        segment.Nd = this._stream.readUint16();
+
+        // NL: ライン数 (Number of lines)
+        segment.NL = this._stream.readUint16();
+
+        if (isDebuggingDNL) {
+            console.log("DNL");
+            console.log(segment);
+        }
+
+        return segment;
+    }
+
+    /**
+     * 伸張リファレンスコンポーネントセグメントの解析
+     */
+    _parseEXP() {
+        let segment = {};
+
+        // Le: 拡張リファレンスコンポーネントセグメント長 (Expand reference components segment length)
+        segment.Le = this._stream.readUint16();
+
+        let Eh_Ev = this._stream.readUint8();
+
+        // Eh: 水平の拡張 (Expand horizontally)
+        segment.Eh = (Eh_Ev & 0xf0) >>> 4;
+
+        // Ev: 垂直の拡張 (Expand vertically)
+        segment.Ev = Eh_Ev & 0x0f;
+
+        if (isDebuggingEXP) {
+            console.log("EXP");
             console.log(segment);
         }
 
