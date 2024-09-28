@@ -1,7 +1,37 @@
-import {JpegMarker} from "./JpegMarker.js";
+import {
+    SOF0,
+    SOF1,
+    SOF2,
+    SOF3,
+    SOF5,
+    SOF6,
+    SOF7,
+    SOF9,
+    SOF10,
+    SOF11,
+    SOF13,
+    SOF14,
+    SOF15,
+    DHT,
+    DAC,
+    SOI,
+    EOI,
+    SOS,
+    DQT,
+    DNL,
+    DRI,
+    DHP,
+    EXP,
+    APPn,
+    APPn_end,
+    JPGn,
+    JPGn_end,
+    COM,
+} from "./JpegMarker.js";
 import {JpegReadStream} from "./JpegDataStream.js";
 import {ycbcrToRgb, reorderZigzagSequence} from "./JpegCommon.js";
 import {idct} from "./JpegSignal.js";
+import {checkContainsWithMarker, checkEqualsWithMaker} from "./JpegCheck.js";
 
 // デバッグ用のフラグ
 const isDebuggingSOF = true;
@@ -18,6 +48,7 @@ const isDebuggingAPP = true;
 const isDebuggingDNL = true;
 const isDebuggingEXP = true;
 const isDebuggingEOI = true;
+
 
 /**
  * JPEGデコーダ用の例外クラス
@@ -66,7 +97,7 @@ export class JpegDecoder {
 
         // イメージ開始
         let soiMarker = this._stream.readUint16();
-        if (soiMarker !== JpegMarker.SOI) {
+        if (soiMarker !== SOI) {
             return false;
         }
 
@@ -74,93 +105,93 @@ export class JpegDecoder {
             let marker = this._stream.readUint16();
             switch (marker) {
                 // イメージ終了
-                case JpegMarker.EOI:
+                case EOI:
                     if (isDebuggingEOI) {
                         console.log("EOI");
                     }
                     return true;
 
                 // ベースDCT
-                case JpegMarker.SOF0:
+                case SOF0:
                 // 拡張シーケンシャルDCT、ハフマン符号か
-                case JpegMarker.SOF1:
+                case SOF1:
                 // プログレッシブDCT、ハフマン符号化
-                case JpegMarker.SOF2:
+                case SOF2:
                     this._parseSOF(marker);
                     break;
 
                 // 可逆圧縮、ハフマン符号
-                case JpegMarker.SOF3:
+                case SOF3:
                 // 差分シーケンシャルDCT、ハフマン符号化
-                case JpegMarker.SOF5:
+                case SOF5:
                 // 差分プログレッシブDCT、ハフマン符号化
-                case JpegMarker.SOF6:
+                case SOF6:
                 // 差分可逆圧縮、ハフマン符号化
-                case JpegMarker.SOF7:
+                case SOF7:
                 // シーケンシャルDCT、算術符号化
-                case JpegMarker.SOF9:
+                case SOF9:
                 // プログレッシブDCT、算術符号化
-                case JpegMarker.SOF10:
+                case SOF10:
                 // 可逆圧縮、算術符号化
-                case JpegMarker.SOF11:
+                case SOF11:
                 // 差分シーケンシャルDCT、算術符号化
-                case JpegMarker.SOF13:
+                case SOF13:
                 // 差分プログレッシブDCT、算術符号化
-                case JpegMarker.SOF14:
+                case SOF14:
                 // 差分可逆圧縮、算術符号化
-                case JpegMarker.SOF15:
-                    throw new JpegDecodeError(`Unsupported SOF${marker - JpegMarker.SOF0} marker`);
+                case SOF15:
+                    throw new JpegDecodeError(`Unsupported SOF${marker - SOF0} marker`);
 
                 // スキャン開始
-                case JpegMarker.SOS:
+                case SOS:
                     this._parseSOS();
                     break;
 
                 // 階層プログレス定義
-                case JpegMarker.DHP:
+                case DHP:
                     this._parseSOF(marker);
                     break;
 
                 // ライン数定義
-                case JpegMarker.DNL:
+                case DNL:
                     this._parseDNL();
                     break;
 
                 // 拡張リファレンスコンポーネント
-                case JpegMarker.EXP:
+                case EXP:
                     this._parseEXP();
                     break;
 
                 // 量子化テーブル定義
-                case JpegMarker.DQT:
+                case DQT:
                     this._parseDQT();
                     break;
 
                 // ハフマンテーブル定義
-                case JpegMarker.DHT:
+                case DHT:
                     this._parseDHT();
                     break;
 
                 // 算術符号化条件定義
-                case JpegMarker.DAC:
+                case DAC:
                     this._parseDAC();
                     break;
 
                 // リスタートインターバル定義
-                case JpegMarker.DRI:
+                case DRI:
                     this._parseDRI();
                     break;
 
                 // コメント
-                case JpegMarker.COM:
+                case COM:
                     this._parseCOM();
                     break;
 
                 default:
-                    if (marker >= JpegMarker.APPn && marker <= JpegMarker.APPn_end) {
+                    if (marker >= APPn && marker <= APPn_end) {
                         // 予約済みのアプリケーションセグメント
                         this._parseAPP(marker);
-                    } else if (marker >= JpegMarker.JPGn && marker <= JpegMarker.JPGn_end) {
+                    } else if (marker >= JPGn && marker <= JPGn_end) {
                         // 予約済みのJPEG拡張
                         this._stream.skip(this._stream.readUint16() - 2);
                         console.info(`Unsupported JPEG extension marker: ${marker.toString(16)}`);
@@ -188,13 +219,8 @@ export class JpegDecoder {
 
         // P: サンプル制度 (Sample precision)
         segment.P = this._stream.readUint8();
-
-        if (marker === JpegMarker.SOF0 && segment.P !== 8) {
-            throw new JpegDecodeError("This frame segment has been broken.");
-        } else if ((marker === JpegMarker.SOF1 || marker === JpegMarker.SOF2) &&
-            (segment.P !== 8 && segment.P !== 12)) {
-            throw new JpegDecodeError("This frame segment has been broken.");
-        }
+        checkEqualsWithMaker([SOF0], 8, marker, segment.P);
+        checkContainsWithMarker([SOF1, SOF2], [8, 12], marker, segment.P);
 
         // Y: ライン数 (Number of lines)
         segment.Y = this._stream.readUint16();
@@ -209,9 +235,9 @@ export class JpegDecoder {
 
         // Nf: フレームのイメージコンポーネント数 (Number of image components in frame)
         segment.Nf = this._stream.readUint8();
-        if ((marker === JpegMarker.SOF0 || marker === JpegMarker.SOF1) && segment.Nf < 1) {
+        if ((marker === SOF0 || marker === SOF1) && segment.Nf < 1) {
             throw new JpegDecodeError("This frame segment has been broken.");
-        } else if (marker === JpegMarker.SOF2 && (segment.Nf < 1 || segment.Nf > 4)) {
+        } else if (marker === SOF2 && (segment.Nf < 1 || segment.Nf > 4)) {
             throw new JpegDecodeError("This frame segment has been broken.");
         }
 
@@ -238,7 +264,7 @@ export class JpegDecoder {
 
             // Tq_i: 量子化テーブル出力セレクター (Quantization table destination selector)
             component.Tq = this._stream.readUint8();
-            if ((marker === JpegMarker.SOF0 || marker === JpegMarker.SOF1 || marker === JpegMarker.SOF2) &&
+            if ((marker === SOF0 || marker === SOF1 || marker === SOF2) &&
                 component.Tq > 3) {
                 throw new JpegDecodeError("This frame segment has been broken.")
             }
@@ -247,7 +273,7 @@ export class JpegDecoder {
         }
 
         if (isDebuggingSOF) {
-            console.log(`SOF${marker - JpegMarker.SOF0}`);
+            console.log(`SOF${marker - SOF0}`);
             console.log(segment);
         }
 
@@ -380,17 +406,17 @@ export class JpegDecoder {
 
             // Td_j: 直流エントロピーコーディングテーブルのセレクター (DC entropy coding table destination selector)
             component.Td = 0xf & (Td_Ta >> 4);
-            if (frameType === JpegMarker.SOF0 && segment.Td > 1) {
+            if (frameType === SOF0 && segment.Td > 1) {
                 throw new JpegDecodeError("This scan segment has been broken.");
-            } else if ((frameType === JpegMarker.SOF1 || frameType === JpegMarker.SOF2) && segment.Td > 3) {
+            } else if ((frameType === SOF1 || frameType === SOF2) && segment.Td > 3) {
                 throw new JpegDecodeError("This scan segment has been broken.");
             }
 
             // Ta_j: 交流エントロピーコーディングテーブルのセレクター (AC entropy coding table destination selector)
             component.Ta = 0xf & Td_Ta;
-            if (frameType === JpegMarker.SOF0 && segment.Ta > 1) {
+            if (frameType === SOF0 && segment.Ta > 1) {
                 throw new JpegDecodeError("This scan segment has been broken.");
-            } else if ((frameType === JpegMarker.SOF1 || frameType === JpegMarker.SOF2) && segment.Ta > 3) {
+            } else if ((frameType === SOF1 || frameType === SOF2) && segment.Ta > 3) {
                 throw new JpegDecodeError("This scan segment has been broken.");
             }
 
@@ -399,17 +425,17 @@ export class JpegDecoder {
 
         // Ss: スペクトルかプリディクターの開始セレクター (Start of spectral or predictor selection)
         segment.Ss = this._stream.readUint8();
-        if ((frameType === JpegMarker.SOF0 || frameType === JpegMarker.SOF1) && segment.Ss !== 0) {
+        if ((frameType === SOF0 || frameType === SOF1) && segment.Ss !== 0) {
             throw new JpegDecodeError("This scan segment has been broken.");
-        } else if (frameType === JpegMarker.SOF3 && segment.Ss > 63) {
+        } else if (frameType === SOF3 && segment.Ss > 63) {
             throw new JpegDecodeError("This scan segment has been broken.");
         }
 
         // Se: スペクトルの終了セレクター (End of spectral selection)
         segment.Se = this._stream.readUint8();
-        if ((frameType === JpegMarker.SOF0 || frameType === JpegMarker.SOF1) && segment.Se !== 63) {
+        if ((frameType === SOF0 || frameType === SOF1) && segment.Se !== 63) {
             throw new JpegDecodeError("This scan segment has been broken.");
-        } else if (frameType === JpegMarker.SOF3 && (segment.Ss > segment.Se && segment.Se > 63)) {
+        } else if (frameType === SOF3 && (segment.Ss > segment.Se && segment.Se > 63)) {
             throw new JpegDecodeError("This scan segment has been broken.");
         }
 
@@ -417,17 +443,17 @@ export class JpegDecoder {
 
         // Ah: 逐次近似の上位のビットの位置 (Successive approximation bit position high)
         segment.Ah = 0xf & (Ah_Al >> 4);
-        if ((frameType === JpegMarker.SOF0 || frameType === JpegMarker.SOF1) && segment.Ah !== 0) {
+        if ((frameType === SOF0 || frameType === SOF1) && segment.Ah !== 0) {
             throw new JpegDecodeError("This scan segment has been broken.");
-        } else if (frameType === JpegMarker.SOF3 && segment.Ah > 13) {
+        } else if (frameType === SOF3 && segment.Ah > 13) {
             throw new JpegDecodeError("This scan segment has been broken.");
         }
 
         // Al: 逐次近似の下位のビットの位置もしくはピットの移動値 (Successive approximation bit position low or point transform)
         segment.Al = 0xf & Ah_Al;
-        if ((frameType === JpegMarker.SOF0 || frameType === JpegMarker.SOF1) && segment.Al !== 0) {
+        if ((frameType === SOF0 || frameType === SOF1) && segment.Al !== 0) {
             throw new JpegDecodeError("This scan segment has been broken.");
-        } else if (frameType === JpegMarker.SOF3 && segment.Al > 13) {
+        } else if (frameType === SOF3 && segment.Al > 13) {
             throw new JpegDecodeError("This scan segment has been broken.");
         }
 
@@ -813,7 +839,6 @@ export class JpegDecoder {
      */
     _parseDQT() {
         let segment = {};
-        let frameType = this._frame.type;
 
         // Lq: 量子化テーブル定義のデータ長 (Quantization table definition length)
         segment.Lq = this._stream.readUint16();
@@ -1171,7 +1196,7 @@ export class JpegDecoder {
         }
 
         if (isDebuggingAPP) {
-            console.log(`APP${marker - JpegMarker.APPn}`);
+            console.log(`APP${marker - APPn}`);
             console.log(segment);
         }
 

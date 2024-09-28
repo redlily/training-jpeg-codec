@@ -614,418 +614,6 @@ JPEGのではハフマンテーブルと呼ばれており実際には下記の�
 - SOF (Start of frame marker: フレームスタートマーカー)
 - SOS (Start of scan marker: スキャンマーカー)
 
-### ユーティリティ
-
-#### 色空間変換
-
-定義
-
-```JavaScript
-/**
- * RGBをYCbCrに変換する
- * @param dst 出力先
- * @param dstOff 出力先の配列オフセット
- * @param src 入力元
- * @param srcOff 入力元の配列オフセット
- */
-function rgbToYcbcr(dst, dstOff, src, srcOff) { ... }
-
-/**
- * YCbCrをRGBに変換する
- * @param dst 出力先
- * @param dstOff 出力先の配列オフセット
- * @param src 入力元
- * @param srcOff 入力元の配列オフセット
- */
-function ycbcrToRgb(dst, dstOff, src, srcOff) { ... }
-```
-
-<details>
-<summary>実装例</summary>
-
-```JavaScript
-/**
- * RGBをYCbCrに変換する
- * @param dst 出力先
- * @param dstOff 出力先の配列オフセット
- * @param src 入力元
- * @param srcOff 入力元の配列オフセット
- */
-function rgbToYcbcr(dst, dstOff, src, srcOff) {
-    let r = src[srcOff];
-    let g = src[srcOff + 1];
-    let b = src[srcOff + 2];
-    dst[dstOff] = 0.299 * r + 0.587 * g + 0.114 * b; // Y
-    dst[dstOff + 1] = -0.1687 * r - 0.3313 * g + 0.5 * b + 128; // Cb
-    dst[dstOff + 2] = 0.5 * r - 0.4187 * g - 0.0813 * b + 128; // Cr
-}
-
-/**
- * YCbCrをRGBに変換する
- * @param dst 出力先
- * @param dstOff 出力先の配列オフセット
- * @param src 入力元
- * @param srcOff 入力元の配列オフセット
- */
-function ycbcrToRgb(dst, dstOff, src, srcOff) {
-    let y = src[srcOff] + 128;
-    let cb = src[srcOff + 1] + 128;
-    let cr = src[srcOff + 2] + 128;
-    dst[dstOff] = y + 1.402 * (cr - 128); // R
-    dst[dstOff + 1] = y - 0.34414 * (cb - 128) - 0.71414 * (cr - 128); // G
-    dst[dstOff + 2] = y + 1.772 * (cb - 128); // B
-}
-```
-
-</details>
-
-#### ジグザグシーケンス
-
-定義
-
-```JavaScript
-/**
- * 8*8の正方行列をジグザグに並べる
- * @param dst 出力先
- * @param src 入力元
- */
-function orderZigzagSequence(dst, src) { ... }
-
-/**
- * ジグザグに並べられた配列を8*8の正方行列に並べなおす
- * @param dst 出力先
- * @param src 入力元
- */
-function reorderZigzagSequence(dst, src) { ... }
-```
-
-<details>
-<summary>実装例</summary>
-
-```JavaScript
-/**
- * ジグザグシーケンスの配列インデックス
- */
-const zigzagSequenceIndices = [
-    0, 1, 5, 6, 14, 15, 27, 28,
-    2, 4, 7, 13, 16, 26, 29, 42,
-    3, 8, 12, 17, 25, 30, 41, 43,
-    9, 11, 18, 24, 31, 40, 44, 53,
-    10, 19, 23, 32, 39, 45, 52, 54,
-    20, 22, 33, 38, 46, 51, 55, 60,
-    21, 34, 37, 47, 50, 56, 59, 61,
-    35, 36, 48, 49, 57, 58, 62, 63
-];
-
-/**
- * 8*8の正方行列をジグザグに並べる
- * @param dst 出力先
- * @param src 入力元
- */
-function orderZigzagSequence(dst, src) {
-    for (let i = 0; i < 64; ++i) {
-        dst[zigzagSequenceIndices[i]] = src[i];
-    }
-}
-
-/**
- * ジグザグに並べられた配列を8*8の正方行列に並べなおす
- * @param dst 出力先
- * @param src 入力元
- */
-function reorderZigzagSequence(dst, src) {
-    for (let i = 0; i < 64; ++i) {
-        dst[i] = src[zigzagSequenceIndices[i]];
-    }
-}
-```
-
-</details>
-
-#### 離散コサイン変換
-
-定義
-
-```JavaScript
-/**
- * 8*8の正方行列の高速離散コサイン変換
- * 中身はJPEG用に調整したB.G.Lee型の高速DCTタイプII
- * @param n 正方行列の一辺の要素数
- * @param x n*nの正方行列
- */
-function dct(n, x) { ... }
-
-/**
- * 8*8正方行列の高速逆離散コサイン変換
- * 中身はJPEG用に調整したB.G.Lee型の高速DCTタイプIII
- * @param n 正方行列の一辺の要素数
- * @param x n*nの正方行列
- */
-function idct(n, x) { ... }
-```
-
-<details>
-<summary>実装例</summary>
-
-```JavaScript
-/**
- * 正の整数に対し2の対数を整数で返す
- */
-function log2ui(n) {
-    n |= n >>> 1;
-    n |= n >>> 2;
-    n |= n >>> 4;
-    n |= n >>> 8;
-    n |= n >>> 16;
-    n = (n & 0x55555555) + (n >> 1 & 0x55555555);
-    n = (n & 0x33333333) + (n >> 2 & 0x33333333);
-    n = (n & 0x0f0f0f0f) + (n >> 4 & 0x0f0f0f0f);
-    n = (n & 0x00ff00ff) + (n >> 8 & 0x00ff00ff);
-    return (n & 0x0000ffff) + (n >> 16 & 0x0000ffff) - 1;
-}
-
-/**
- * 要素を入れ替える
- */
-function swap(v, a, b) {
-    let t = v[a];
-    v[a] = v[b];
-    v[b] = t;
-}
-
-/**
- * 要素の2次元配列の並び替え
- */
-function swapElements2d(n, x) {
-    let nl = log2ui(n);
-    let nn = 1 << (nl << 1);
-
-    let nh = n >> 1;
-    let nh1 = nh + 1;
-    let nq = n >> 2;
-
-    let nnh = nh << nl;
-    let nnh1 = nh1 << nl;
-    let nnq = nq << nl;
-    let n2 = n << 1;
-
-    // 横方向
-    for (let i = 0, j = 0; i < nh; i += 2) {
-        for (let k = 0; k < nn; k += n) {
-            let i0 = k + i;
-            let j0 = k + j;
-            swap(x, i0 + nh, j0 + 1);
-            if (i < j) {
-                swap(x, i0 + nh1, j0 + nh1);
-                swap(x, i0, j0);
-            }
-        }
-
-        // ビットオーダを反転した変数としてインクリメント
-        for (let k = nq; (j ^= k) < k; k >>= 1) {
-        }
-    }
-
-    // 縦方向
-    for (let i = 0, j = 0; i < nnh; i += n2) {
-        for (let k = 0; k < n; ++k) {
-            swap(x, i + nnh + k, j + n + k);
-            if (i < j) {
-                swap(x, i + nnh1 + k, j + nnh1 + k);
-                swap(x, i + k, j + k);
-            }
-        }
-
-        // ビットオーダを反転した変数としてインクリメント
-        for (let k = nnq; (j ^= k) < k; k >>= 1) {
-        }
-    }
-}
-
-/**
- * 8*8の正方行列の高速離散コサイン変換
- * 中身はJPEG用に調整したB.G.Lee型の高速DCTタイプII
- * @param n 正方行列の一辺の要素数
- * @param x n*nの正方行列
- */
-function dct(n, x) {
-    let nl = log2ui(n);
-    let nn = n << nl;
-
-    // バタフライ演算
-    let rad = Math.PI / (n << 1);
-    for (let m = n, mh = m >> 1; 1 < m; m = mh, mh >>= 1) {
-        let nm = m << nl;
-        for (let i = 0, ni = 0; i < mh; ++i, ni += n) {
-            let cs = 2.0 * Math.cos(rad * ((i << 1) + 1));
-
-            // 横方向
-            for (let h = 0; h < n; ++h) {
-                let off = n * h;
-                for (let j = i, k = (m - 1) - i; j < n; j += m, k += m) {
-                    let x0 = x[off + j];
-                    let x1 = x[off + k];
-                    x[off + j] = x0 + x1;
-                    x[off + k] = (x0 - x1) * cs;
-                }
-            }
-
-            // 縦方向
-            for (let v = 0; v < n; ++v) {
-                for (let j = ni, k = (nm - n) - ni; j < nn; j += nm, k += nm) {
-                    let x0 = x[j + v];
-                    let x1 = x[k + v];
-                    x[j + v] = x0 + x1;
-                    x[k + v] = (x0 - x1) * cs;
-                }
-            }
-        }
-
-        rad *= 2.0;
-    }
-
-    // データの入れ替え
-    swapElements2d(n, x);
-
-    // 差分方程式
-    for (let m = n, mh = m >> 1, mq = mh >> 1; 2 < m; m = mh, mh = mq, mq >>= 1) {
-        let nm = m << nl;
-        let nmh = mh << nl;
-        for (let i = mq + mh, ni = n * i; i < m; ++i, ni += n) {
-            // 横方向
-            for (let h = 0; h < nn; h += n) {
-                let xt = (x[h + i] = -x[h + i] - x[h + i - mh]);
-                for (let j = i + mh; j < n; j += m) {
-                    let k = j + mh;
-                    xt = (x[h + j] -= xt);
-                    xt = (x[h + k] = -x[h + k] - xt);
-                }
-            }
-
-            // 縦方向
-            for (let v = 0; v < n; ++v) {
-                let i0 = ni + v;
-                let xt = (x[i0] = -x[i0] - x[ni - nmh + v]);
-                for (let j = ni + nmh; j < nn; j += nm) {
-                    let k = j + nmh + v;
-                    xt = (x[j + v] -= xt);
-                    xt = (x[k] = -x[k] - xt);
-                }
-            }
-        }
-    }
-
-    // スケーリング
-    x[0] *= 0.25 * 0.5;
-    for (let i = 1; i < n; ++i) {
-        x[i] *= 0.25 * 0.70710678118;
-    }
-    for (let i = n; i < nn;) {
-        x[i++] *= 0.25 * 0.70710678118;
-        for (let j = i + n; i < j; ++i) {
-            x[i] *= 0.25;
-        }
-    }
-}
-
-/**
- * 8*8正方行列の高速逆離散コサイン変換
- * 中身はJPEG用に調整したB.G.Lee型の高速DCTタイプIII
- * @param n 正方行列の一辺の要素数
- * @param x n*nの正方行列
- */
-function idct(n, x) {
-    let nl = log2ui(n);
-    let nn = n << nl;
-
-    // 周波数係数のスケーリング
-    x[0] *= 0.5;
-    for (let i = 1, j = n; i < n; ++i, j += n) {
-        x[i] *= 0.70710678118;
-        x[j] *= 0.70710678118;
-    }
-
-    // 差分方程式
-    for (let m = 4, mh = 2, mq = 1; m <= n; mq = mh, mh = m, m <<= 1) {
-        let nm = m << nl;
-        let nmh = mh << nl;
-        for (let i = n - mq, ni = i << nl; i < n; ++i, ni += n) {
-            // 横方向
-            let j = i;
-            while (m < j) {
-                let k = j - mh;
-                let l = k - mh;
-                for (let h = 0; h < nn; h += n) {
-                    x[h + j] = -x[h + j] - x[h + k];
-                    x[h + k] += x[h + l];
-                }
-                j = l;
-            }
-            for (let h = 0; h < nn; h += n) {
-                x[h + j] = -x[h + j] - x[h + j - mh];
-            }
-
-            // 縦方向
-            j = ni;
-            while (nm < j) {
-                let k = j - nmh;
-                let l = k - nmh;
-                for (let v = 0; v < n; ++v) {
-                    x[j + v] = -x[j + v] - x[k + v];
-                    x[k + v] += x[l + v];
-                }
-                j = l;
-            }
-            for (let v = 0; v < n; ++v) {
-                x[j + v] = -x[j + v] - x[j - nmh + v];
-            }
-        }
-    }
-
-    // データの入れ替え
-    swapElements2d(n, x);
-
-    // バタフライ演算
-    let rad = Math.PI / 2.0;
-    for (let m = 2, mh = 1; m <= n; mh = m, m <<= 1) {
-        let nm = m << nl;
-        rad *= 0.5;
-        for (let i = 0, ni = 0; i < mh; ++i, ni += n) {
-            let cs = 2.0 * Math.cos(rad * ((i << 1) + 1));
-
-            // 横方向
-            for (let j = i, k = (m - 1) - i; j < n; j += m, k += m) {
-                for (let h = 0; h < n; ++h) {
-                    let off = h << nl;
-                    let x0 = x[off + j];
-                    let x1 = x[off + k] / cs;
-                    x[off + j] = x0 + x1;
-                    x[off + k] = x0 - x1;
-                }
-            }
-
-            // 縦方向
-            for (let j = ni, k = (nm - n) - ni; j < nn; j += nm, k += nm) {
-                for (let v = 0; v < n; ++v) {
-                    let x0 = x[j + v];
-                    let x1 = x[k + v] / cs;
-                    x[j + v] = x0 + x1;
-                    x[k + v] = x0 - x1;
-                }
-            }
-        }
-    }
-
-    // サンプリング値のスケーリング
-    for (let i = 0; i < nn; ++i) {
-        x[i] *= 0.25;
-    }
-}
-
-```
-
-</details>
-
 #### データストリームの実装
 
 定義
@@ -1271,9 +859,30 @@ _readUnit8ForReadingBits() {
     }
     return bits;
 }
+
+/**
+ * 
+ */
 ```
 
 #### マーカー定義
+
+JPEGの基本仕様で定義されているマーカーは下記になります。
+
+|マーカー名|名称|値|説明|
+|:--|:--|:--|:--|
+|SOF0|Baseline DCT|0xFFC0|ハフマン符号化を用いた差分なしベースラインDCT|
+|SOF1|Extended sequential DCT|0xFFC1|ハフマン符号化を用いた差分なし拡張シーケンシャルDCT|
+|SOF2|Progressive DCT|0xFFC2|ハフマン符号化を用いた差分なしプログレッシブDCT|
+|SOF3|Lossless (sequential)|0xFFC3|ハフマン符号化を用いた差分なし可逆圧縮 (シーケンシャル)|
+|SOF5|Differential sequential DCT|0xFFC5|ハフマン符号化を用いた差分シーケンシャルDCT|
+|SOF6|Differential progressive DCT|0xFFC6|ハフマン符号化を用いた差分プログレッシブDCT|
+|SOF7|Differential lossless (sequential)|0xFFC7|ハフマン符号化を用いた差分可逆圧縮 (シーケンシャル)|
+|JPG|Reserved for JPEG extensions|0xFFC8|予約済みのJPEG拡張|
+|SOF9|Extended sequential DCT|0xFFC9|算術符号化を用いた差分なし拡張シーケンシャルDCT|
+|SOF10|Progressive DCT|0xFFCA|算術符号化を用いた差分なしプログレッシブDCT|
+|SOF11|Lossless (sequential)|0xFFCB|算術符号化を用いた差分なし可逆圧縮 (シーケンシャル)|
+
 
 ```JavaScript
 /**
@@ -1281,44 +890,9 @@ _readUnit8ForReadingBits() {
  */
 export class JpegMarker {
 
-    // フレームの開始マーカー、非差分、ハフマン符号化
-
-    /** ベースラインDCT */
-    static get SOF0() { return 0xFFC0; }
-
-    /** 拡張シーケンシャルDCT */
-    static get SOF1() { return 0xFFC1; }
-
-    /** プログレッシブDCT */
-    static get SOF2() { return 0xFFC2; }
-
-    /** 可逆圧縮*/
-    static get SOF3() { return 0xFFC3; }
-
     // フレームの開始マーカー、差分、ハフマン符号化
 
-    /** 差分シーケンシャルDCT */
-    static get SOF5() { return 0xFFC5; }
-
-    /** 差分プログレッシブDCT */
-    static get SOF6() { return 0xFFC6; }
-
-    /** 差分可逆圧縮 (シーケンシャル) */
-    static get SOF7() { return 0xFFC7; }
-
     // フレームの開始マーカー、非差分、算術符号化
-
-    /** 予約済みのJPEG拡張 */
-    static get JPG() { return 0xFFC8; }
-
-    /** 拡張シーケンシャルDCT */
-    static get SOF9() { return 0xFFC9; }
-
-    /** プログレッシブDCT */
-    static get SOF10() { return 0xFFCA; }
-
-    /** 可逆圧縮 */
-    static get SOF11() { return 0xFFCB; }
 
     // フレームの開始マーカー、差分、算術符号化
 
@@ -1609,7 +1183,41 @@ class JpegDecoder {
 
 ### ハフマン符号化
 
+```JavaScript
+```
+
 #### マグニチュードカテゴリ
+
+|SSSS|value|
+|:--:|:--:|
+|0|0|
+|1|–1, 1|
+|2|–3～–2, 2～3|
+|3|–7～–4, 4～7|
+|4|–15～–8, 8～15|
+|5|–31～–16, 16～31|
+|6|–63～–32, 32～63|
+|7|–127～–64, 64～127|
+|8|–255～–128, 128～255|
+|9|–511～–256, 256～511|
+|10|–1023～–512, 512～1023|
+|11|–2047～–1024, 1024～2047|
+|11|–2047～–1 024, 1024～2047|
+|12|–4095～–2 048, 2048～4095|
+|13|–8191～–4 096, 4096～8191|
+|14|–16383～–8 192, 8192～16383|
+
+```JavaScript
+let rawValue = 0;
+let value = 0;
+if (element.additionalBits > 0) {
+    rawValue = this._stream.readBits(element.additionalBits);
+
+    // マグニチュードカテゴリによるデコード
+    value = rawValue < (1 << (element.additionalBits - 1)) ?
+        ((-1 << element.additionalBits) | rawValue) + 1 : rawValue;
+}
+```
 
 #### 逐次近似 (ハフマン符号化用)
 
