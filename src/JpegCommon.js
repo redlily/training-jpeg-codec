@@ -26,7 +26,7 @@ export function ycbcrToRgb(dst, dstOff, src, srcOff) {
     let cb = src[srcOff + 1] + 128;
     let cr = src[srcOff + 2] + 128;
     dst[dstOff] = y + 1.402 * (cr - 128); // R
-    dst[dstOff + 1] = y - 0.34414 * (cb - 128) - 0.71414 * (cr - 128); // G
+    dst[dstOff + 1] = y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128); // G
     dst[dstOff + 2] = y + 1.772 * (cb - 128); // B
 }
 

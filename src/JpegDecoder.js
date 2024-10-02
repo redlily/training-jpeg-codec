@@ -55,7 +55,6 @@ const isDebuggingDNL = true;
 const isDebuggingEXP = true;
 const isDebuggingEOI = true;
 
-
 /**
  * JPEGデコーダ用の例外クラス
  */
@@ -87,7 +86,7 @@ export class JpegDecoder {
         /** 量子化テーブル */
         this._quantizationTables = {};
         /** ハフマン木 */
-        this._huffmanTrees = [{}, {}];
+        this._huffmanTables = [{}, {}];
         /** リスタートインターバル */
         this._restertInterval = 0;
         /** 出力データ */
@@ -444,8 +443,6 @@ export class JpegDecoder {
      * スキャンデータをハフマン符号化を用いてデコード
      */
     _decodeScanDataWithHuffmanCoding(segment) {
-        let isDebugging = isDebuggingSOS && isDebuggingSOSDetail;
-
         let scanWork = {
             numberOfEndOfBlock: 0,
             prevDcCoefs: new Float32Array(segment.Ns)
@@ -458,8 +455,8 @@ export class JpegDecoder {
                     let scanComponent = segment.components[j];
                     let frameComponent = this._frame.components[scanComponent.Cs - 1];
 
-                    let dcHuffmanTree = this._huffmanTrees[0][scanComponent.Td];
-                    let acHuffmanTree = this._huffmanTrees[1][scanComponent.Ta];
+                    let dcHuffmanTable = this._huffmanTables[0][scanComponent.Td];
+                    let acHuffmanTable = this._huffmanTables[1][scanComponent.Ta];
 
                     for (let k = 0; k < frameComponent.samplingFactor; ++k) {
                         let index = frameComponent.numHorizontalUnitsInComponent *
@@ -468,17 +465,13 @@ export class JpegDecoder {
                             frameComponent.numHorizontalUnitsInComponent *
                             Math.floor(k / frameComponent.horizontalSamplingFactor) +
                             k % frameComponent.horizontalSamplingFactor;
-                        try {
-                            this._decodeUnitWithHuffmanCoding(
-                                segment,
-                                scanWork,
-                                dcHuffmanTree,
-                                acHuffmanTree,
-                                j,
-                                frameComponent.units[index]);
-                        } catch (e) {
-                            throw e;
-                        }
+                        this._decodeUnitWithHuffmanCoding(
+                            segment,
+                            scanWork,
+                            dcHuffmanTable,
+                            acHuffmanTable,
+                            j,
+                            frameComponent.units[index]);
                     }
                 }
             }
@@ -487,8 +480,8 @@ export class JpegDecoder {
             let scanComponent = segment.components[0];
             let frameComponent = this._frame.components[scanComponent.Cs - 1];
 
-            let dcHuffmanTree = this._huffmanTrees[0][scanComponent.Td];
-            let acHuffmanTree = this._huffmanTrees[1][scanComponent.Ta];
+            let dcHuffmanTree = this._huffmanTables[0][scanComponent.Td];
+            let acHuffmanTree = this._huffmanTables[1][scanComponent.Ta];
 
             for (let i = 0;
                  i < frameComponent.numHorizontalUnitsInComponent *
@@ -703,13 +696,14 @@ export class JpegDecoder {
                     break;
                 }
 
+                // ジグザグシーケンスの並び戻す
+                reorderZigzagSequence(unit, component.units[j]);
+
                 // 再量子化
                 for (let k = 0; k < 64; ++k) {
                     unit[k] *= quantizationTable[k];
                 }
 
-                // ジグザグシーケンスの並び戻す
-                reorderZigzagSequence(unit, component.units[j]);
 
                 // 逆離散コサイン変換
                 idct(8, unit);
@@ -780,22 +774,25 @@ export class JpegDecoder {
             let quantizationTable;
             if (table.P === 0) {
                 // 8bitの精度
-                table.Q = new Uint8Array(64);
-                quantizationTable = new Uint8Array(64);
+                let Q = new Uint8Array(64);
                 for (let k = 0; k < 64; ++k) {
-                    table.Q[k] = this._stream.readUint8();
-                    checkRange(1, 255, table.Q[k]);
+                    Q[k] = this._stream.readUint8();
+                    checkRange(1, 255, Q[k]);
                 }
+                table.Q = Q;
+                quantizationTable = new Uint8Array(64);
             } else if (table.P === 1) {
                 // 16bitの精度
-                table.Q = new Uint16Array(64);
-                quantizationTable = new Uint16Array(64);
+                let Q = new Uint16Array(64);
                 for (let k = 0; k < 64; ++k) {
-                    table.Q[k] = this._stream.readUint16();
-                    checkRange(1, 65535, table.Q[k]);
+                    Q[k] = this._stream.readUint16();
+                    checkRange(1, 65535, Q[k]);
                 }
+                table.Q = Q;
+                quantizationTable = new Uint16Array(64);
             }
-            this._quantizationTables[table.T] = table.Q;
+            reorderZigzagSequence(quantizationTable, table.Q);
+            this._quantizationTables[table.T] = quantizationTable;
 
             readSize += 65 + 64 * table.P;
             segment.tables.push(table);
@@ -807,12 +804,15 @@ export class JpegDecoder {
             if (isDebuggingDQTDetail) {
                 for (let i = 0; i < segment.tables.length; ++i) {
                     let table = segment.tables[i];
+
                     let quantizationTable = new Uint16Array(64);
                     reorderZigzagSequence(quantizationTable, table.Q);
+
                     let output = [];
                     for (let j = 0; j < 64; j += 8) {
                         output.push(Array.from(quantizationTable.slice(j, j + 8)));
                     }
+
                     console.log(`Quantization table ${i} for ${table.T === 0 ? "DC" : "AC"}.`);
                     console.table(output);
                 }
@@ -847,7 +847,7 @@ export class JpegDecoder {
             checkRange(0, 3, table.Th);
 
             // L_i: 長さiのハフマンコード数 (Number of Huffman codes of length i)
-            table.L = new Array(16);
+            table.L = new Uint8Array(16);
             this._stream.readUint8Array(table.L, 0, 16);
             for (let i = 0; i < 16; ++i) {
                 checkRange(0, 255, table.L[i]);
@@ -857,15 +857,17 @@ export class JpegDecoder {
             table.V = new Array(16);
             for (let i = 0; i < 16; ++i) {
                 let L = table.L[i];
-                this._stream.readUint8Array(table.V[i] = new Array(L), 0, L);
+                let V = new Uint8Array(L);
+                this._stream.readUint8Array(V, 0, L);
                 for (let j = 0; j < L; ++j) {
-                    checkRange(0, 255, table.V[i][j]);
+                    checkRange(0, 255, V[j]);
                 }
+                table.V[i] = V;
+
                 readSize += L;
             }
 
             readSize += 17;
-
             segment.tables.push(table);
         }
 
@@ -877,7 +879,7 @@ export class JpegDecoder {
         // ハフマンテーブルをより扱いやすい構造にする
         for (let i = 0; i < segment.tables.length; ++i) {
             let table = segment.tables[i];
-            this._huffmanTrees[table.Tc][table.Th] = this._decodeHuffmanTables(table);
+            this._huffmanTables[table.Tc][table.Th] = this._decodeHuffmanTables(table);
         }
 
         return segment;
@@ -908,7 +910,7 @@ export class JpegDecoder {
                         debugTable.push({
                             "bits": j + 1,
                             "code": ("0000000000000000" + code.toString(2)).slice(-j - 1),
-                            "additionalBits": value
+                            "additionalBits": values[k].additionalBits
                         });
                     }
                 } else if (table.Tc === 1) {
@@ -932,7 +934,7 @@ export class JpegDecoder {
                                 "bits": j + 1,
                                 "code": ("0000000000000000" + code.toString(2)).slice(-j - 1),
                                 "runLength": values[k].runLength,
-                                "additionalBits": value,
+                                "additionalBits": values[k].additionalBits,
                                 "specialValue": strValue
                             });
                         } else {
@@ -940,7 +942,7 @@ export class JpegDecoder {
                                 "bits": j + 1,
                                 "code": ("0000000000000000" + code.toString(2)).slice(-j - 1),
                                 "runLength": values[k].runLength,
-                                "additionalBits": value
+                                "additionalBits": values[k].additionalBits
                             });
                         }
                     }
