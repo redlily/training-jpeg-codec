@@ -86,7 +86,7 @@ export class JpegReadStream {
 
     /**
      * 符号なしの16bitの整数を読み込む
-     * @return {uint} 読み込んだデータ
+     * @return {number} 読み込んだデータ
      */
     readUint16() {
         let value = this._view.getUint16(this._off);

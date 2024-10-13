@@ -75,8 +75,8 @@ export class JpegDecoder {
     /**
      * コンストラクタ
      * @param {ArrayBuffer} buffer データ
-     * @param {uint} offset データオフセット
-     * @param {uint} length データ長
+     * @param {number} offset データオフセット
+     * @param {number} length データ長
      */
     constructor(buffer, offset = undefined, length = undefined) {
         /** データストリーム */
@@ -122,9 +122,6 @@ export class JpegDecoder {
                 case SOF1:
                 // プログレッシブDCT、ハフマン符号化
                 case SOF2:
-                    this._parseSOF(marker);
-                    break;
-
                 // 可逆圧縮、ハフマン符号
                 case SOF3:
                 // 差分シーケンシャルDCT、ハフマン符号化
@@ -145,7 +142,8 @@ export class JpegDecoder {
                 case SOF14:
                 // 差分可逆圧縮、算術符号化
                 case SOF15:
-                    throw new JpegDecodeError(`Unsupported SOF${marker - SOF0} marker`);
+                    this._parseSOF(marker);
+                    break;
 
                 // スキャン開始
                 case SOS:
@@ -184,7 +182,8 @@ export class JpegDecoder {
 
                 // 階層プログレス定義
                 case DHP:
-                    throw new JpegDecodeError(`Unsupported DHP marker`);
+                    this._parseDHP();
+                    break;
 
                 // 拡張リファレンスコンポーネント
                 case EXP:
@@ -216,6 +215,10 @@ export class JpegDecoder {
      * フレームの開始セグメントの解析
      */
     _parseSOF(marker) {
+        if (marker !== SOF0 && marker !== SOF1 && marker !== SOF2) {
+            throw new JpegDecodeError(`Unsupported SOF${marker - SOF0} marker`);
+        }
+
         let segment = {};
 
         // Lf: フレームヘッダー長 (Frame header length)
@@ -704,7 +707,6 @@ export class JpegDecoder {
                     unit[k] *= quantizationTable[k];
                 }
 
-
                 // 逆離散コサイン変換
                 idct(8, unit);
 
@@ -1129,6 +1131,13 @@ export class JpegDecoder {
         }
 
         return segment;
+    }
+
+    /**
+     * 階層プログレス定義セグメントの解析
+     */
+    _parseDHP() {
+        throw new JpegDecodeError(`Unsupported DHP marker`);
     }
 
     /**

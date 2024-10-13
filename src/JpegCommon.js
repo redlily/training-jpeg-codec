@@ -1,9 +1,9 @@
 /**
  * RGBをYCbCrに変換する
  * @param {number[]|Float32Array} dst 出力先
- * @param {uint} dstOff 出力先の配列オフセット
+ * @param {number} dstOff 出力先の配列オフセット
  * @param {number[]|Float32Array} src 入力元
- * @param {uint} srcOff 入力元の配列オフセット
+ * @param {number} srcOff 入力元の配列オフセット
  */
 export function rgbToYcbcr(dst, dstOff, src, srcOff) {
     let r = src[srcOff];
@@ -17,9 +17,9 @@ export function rgbToYcbcr(dst, dstOff, src, srcOff) {
 /**
  * YCbCrをRGBに変換する
  * @param {number[]|Float32Array|Float64Array} dst 出力先
- * @param {uint} dstOff 出力先の配列オフセット
+ * @param {number} dstOff 出力先の配列オフセット
  * @param {number[]|Float32Array|Float64Array} src 入力元
- * @param {uint} srcOff 入力元の配列オフセット
+ * @param {number} srcOff 入力元の配列オフセット
  */
 export function ycbcrToRgb(dst, dstOff, src, srcOff) {
     let y = src[srcOff] + 128;
