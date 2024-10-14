@@ -146,14 +146,16 @@ export function dct(n, x) {
     }
 
     // スケーリング
-    x[0] *= 0.25 * 0.5;
-    for (let i = 1; i < n; ++i) {
-        x[i] *= 0.25 * 0.70710678118;
+    x[0] *= 0.125;
+    let rnsr2 = 1 / (n * Math.SQRT2)
+    for (let i = 1, j = n; i < n; ++i, j += n) {
+        x[i] *= rnsr2;
+        x[j] *= rnsr2;
     }
-    for (let i = n; i < nn;) {
-        x[i++] *= 0.25 * 0.70710678118;
-        for (let j = i + n; i < j; ++i) {
-            x[i] *= 0.25;
+    let rn2 = 1 / (n << 1);
+    for (let i = n; i < nn; i += n) {
+        for (let j = 1; j < n; ++j) {
+            x[i + j] *= rn2;
         }
     }
 }
@@ -171,8 +173,8 @@ export function idct(n, x) {
     // 周波数係数のスケーリング
     x[0] *= 0.5;
     for (let i = 1, j = n; i < n; ++i, j += n) {
-        x[i] *= 0.70710678118;
-        x[j] *= 0.70710678118;
+        x[i] *= Math.SQRT1_2;
+        x[j] *= Math.SQRT1_2;
     }
 
     // 差分方程式

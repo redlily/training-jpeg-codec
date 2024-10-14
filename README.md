@@ -818,6 +818,46 @@ _parseDQT() {
 実装例
 
 ```JavaScript
+/**
+ * ハフマンテーブル定義セグメントの解析
+ */
+_parseDHT() {
+    let segment = {};
+
+    // Lh: ハフマンテーブル定義長 (Huffman table definition length)
+    segment.Lh = this._stream.readUint16();
+
+    segment.tables = [];
+    for (let readSize = 2; readSize < segment.Lh;) {
+        let table = {};
+
+        let Tc_Th = this._stream.readUint8();
+
+        // Tc: テーブルクラス (Table class)
+        table.Tc = 0xf & (Tc_Th >> 4);
+
+        // Th: ハフマンテーブルの識別子 (Huffman table destination identifier)
+        table.Th = 0xf & Tc_Th;
+
+        // L_i: 長さiのハフマンコード数 (Number of Huffman codes of length i)
+        table.L = new Uint8Array(16);
+        this._stream.readUint8Array(table.L, 0, 16);
+
+        // V_{i, j}: 各ハフマンコードの値 (Value associated with each Huffman code)
+        table.V = new Array(16);
+        for (let i = 0; i < 16; ++i) {
+            let L = table.L[i];
+            let V = new Uint8Array(L);
+            this._stream.readUint8Array(V, 0, L);
+            table.V[i] = V;
+
+            readSize += L;
+        }
+
+        readSize += 17;
+        segment.tables.push(table);
+    }
+}
 ```
 
 #### ビットデータストリームの実装
@@ -908,6 +948,8 @@ resetRemainBits() {
 
 ### SOF
 
+データ構造
+
 |パラメータ|サイズ (bit)|ベースライン|拡張シーケンシャル|プログレッシブ|説明|
 |:--|:--|:--|:--|:--|:--|
 |Lf|16|8 + 3 × Nf|〃|〃|フレームヘッダー長|
@@ -919,6 +961,8 @@ resetRemainBits() {
 |$H_i$|4|1～4|〃|〃|水平方向のサンプリング|
 |$V_i$|4|1～4|〃|〃|垂直方向のサンプリング|
 |$Tq_i$|8|0～3|〃|〃|量子化テーブルセレクター|
+
+実装例
 
 ```JavaScript
 /**
@@ -969,17 +1013,92 @@ resetRemainBits() {
 
 ### SOS
 
-```JavaScript
-let rawValue = 0;
-let value = 0;
-if (element.additionalBits > 0) {
-    rawValue = this._stream.readBits(element.additionalBits);
+データ構造
 
-    // マグニチュードカテゴリによるデコード
-    value = rawValue < (1 << (element.additionalBits - 1)) ?
-        ((-1 << element.additionalBits) | rawValue) + 1 : rawValue;
+|パラメータ|サイズ (bit)|ベースライン|拡張シーケンシャル|プログレッシブ|説明|
+|:--|:--|:--|:--|:--|:--|
+|Ls|16|6+2×Ns|||スキャン開始のサイズ|
+|Ns|8|1～4|1～4|1～4|コンポーネント数|
+|Csj|8|0～255|0～255|0～255|コンポーネントセレクター|
+|Tdj|4|0～1|0～3|0～3|直流用のエントロピー符号化テーブルセレクター|
+|Taj|4|0～1|0～3|0～3|交流用のエントロピー符号化テーブルセレクター|
+|Ss|8|0|0|0～63|開始スペクトル|
+|Se|8|63|63|Ss～63|終了スペクトル|
+|Ah|4|0|0|0～13|逐次近似の上位ビット位置|
+|Al|4|0|0|0～13|逐次近似の下位ビット位置|
+
+実装例
+
+```JavaScript
+/**
+ * スキャン開始セグメントの解析
+ */
+_parseSOS() {
+    let segment = {};
+
+    // Ls: スキャンヘッダーデータ長 (Scan header length)
+    segment.Ls = this._stream.readUint16();
+
+    // Ns: スキャンのイメージコンポーネント数 (Number of image components in scan)
+    segment.Ns = this._stream.readUint8();
+
+    segment.components = new Array(segment.Ns);
+    for (let j = 0; j < segment.Ns; ++j) {
+        let component = {};
+
+        // Cs_j: スキャンコンポーネントのセレクター (Scan component selector)
+        component.Cs = this._stream.readUint8();
+
+        let Td_Ta = this._stream.readUint8();
+
+        // Td_j: 直流エントロピーコーディングテーブルのセレクター (DC entropy coding table destination selector)
+        component.Td = 0xf & (Td_Ta >> 4);
+
+        // Ta_j: 交流エントロピーコーディングテーブルのセレクター (AC entropy coding table destination selector)
+        component.Ta = 0xf & Td_Ta;
+
+        segment.components[j] = component;
+    }
+
+    // Ss: スペクトルかプリディクターの開始セレクター (Start of spectral or predictor selection)
+    segment.Ss = this._stream.readUint8();
+
+    // Se: スペクトルの終了セレクター (End of spectral selection)
+    segment.Se = this._stream.readUint8();
+
+    let Ah_Al = this._stream.readUint8();
+
+    // Ah: 逐次近似の上位のビットの位置 (Successive approximation bit position high)
+    segment.Ah = 0xf & (Ah_Al >> 4);
+
+    // Al: 逐次近似の下位のビットの位置もしくはピットの移動値 (Successive approximation bit position low or point transform)
+    segment.Al = 0xf & Ah_Al;
+
+    return segment;
 }
 ```
+
+#### インターリーブ、非インターリーブ
+
+```JavaScript
+if (segment.Ns > 1) {
+    // インターリーブの場合
+    for (let i = 0; i < this._frame.numMcus; ++i) {
+        for (let j = 0; j < segment.Ns; ++j) {
+
+        }
+    }
+} else {
+    // 非インターリーブの場合
+    for (let i = 0; i < this._frame.components[0]; ++i) {
+
+    }
+}
+```
+
+#### 
+
+#### 逐次近似
 
 ## サンプルプログラム
 

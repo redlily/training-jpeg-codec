@@ -1,43 +1,37 @@
 import {
+    APPn,
+    APPn_end,
+    COM,
+    DAC,
+    DHP,
+    DHT,
+    DNL,
+    DQT,
+    DRI,
+    EOI,
+    EXP,
+    JPGn,
+    JPGn_end,
     SOF0,
     SOF1,
+    SOF10,
+    SOF11,
+    SOF13,
+    SOF14,
+    SOF15,
     SOF2,
     SOF3,
     SOF5,
     SOF6,
     SOF7,
     SOF9,
-    SOF10,
-    SOF11,
-    SOF13,
-    SOF14,
-    SOF15,
-    DHT,
-    DAC,
     SOI,
-    EOI,
     SOS,
-    DQT,
-    DNL,
-    DRI,
-    DHP,
-    EXP,
-    APPn,
-    APPn_end,
-    JPGn,
-    JPGn_end,
-    COM,
 } from "./JpegMarker.js";
 import {JpegReadStream} from "./JpegDataStream.js";
-import {ycbcrToRgb, reorderZigzagSequence} from "./JpegCommon.js";
+import {reorderZigzagSequence, ycbcrToRgb} from "./JpegCommon.js";
+import {checkContainsWithMarker, checkEqualsWithMaker, checkRange, checkRangeWithMarker} from "./JpegCheck.js";
 import {idct} from "./JpegSignal.js";
-import {
-    checkContainsWithMarker,
-    checkEquals,
-    checkEqualsWithMaker,
-    checkRange,
-    checkRangeWithMarker
-} from "./JpegCheck.js";
 
 // デバッグ用のフラグ
 const isDebuggingSOF = true;
@@ -280,43 +274,42 @@ export class JpegDecoder {
      */
     _constructFrameInfo(marker, segment) {
         // サンプリング要素数の最大値
-        let maxHorizontalSamplingFactor = 1;
-        let maxVerticalSamplingFactor = 1;
+        let maxSamplingFactorH = 1;
+        let maxSamplingFactorV = 1;
         for (let i = 0; i < segment.components.length; ++i) {
             let component = segment.components[i];
 
-            if (maxHorizontalSamplingFactor < component.H) {
-                maxHorizontalSamplingFactor = component.H;
+            if (maxSamplingFactorH < component.H) {
+                maxSamplingFactorH = component.H;
             }
-            if (maxVerticalSamplingFactor < component.V) {
-                maxVerticalSamplingFactor = component.V;
+            if (maxSamplingFactorV < component.V) {
+                maxSamplingFactorV = component.V;
             }
         }
 
-        let widthMcu = maxHorizontalSamplingFactor * 8;
-        let heightMcu = maxVerticalSamplingFactor * 8;
+        let widthMcu = maxSamplingFactorH * 8;
+        let heightMcu = maxSamplingFactorV * 8;
 
         let width = segment.X;
         let height = segment.Y;
-
-        let numHorizontalMcusInImage = Math.ceil(width / widthMcu);
-        let numVerticalMcusInImage = Math.ceil(height / heightMcu);
+        let numMcusH = Math.ceil(width / widthMcu);
+        let numMcusV = Math.ceil(height / heightMcu);
 
         // コンポーネント情報の構築
         let components = new Array(segment.Nf);
         for (let i = 0; i < components.length; ++i) {
             let component = segment.components[i];
 
-            let widthUnitInMcu = maxHorizontalSamplingFactor / component.H;
-            let heightUnitInMcu = maxVerticalSamplingFactor / component.V;
+            let widthUnitInMcu = maxSamplingFactorH / component.H;
+            let heightUnitInMcu = maxSamplingFactorV / component.V;
 
-            let numHorizontalUnitsInComponent = numHorizontalMcusInImage * component.H;
-            let numVerticalUnitsInComponent = numVerticalMcusInImage * component.V;
+            let numHorizontalUnitsInComponent = numMcusH * component.H;
+            let numVerticalUnitsInComponent = numMcusV * component.V;
 
-            let numHorizontalUnitsInComponentWithoutMcu =
-                Math.ceil(width * component.H / maxHorizontalSamplingFactor / 8);
-            let numVerticalUnitsInComponentWithoutMcu =
-                Math.ceil(height * component.V / maxVerticalSamplingFactor / 8);
+            let numUnitsHWithoutMcu =
+                Math.ceil(width * component.H / maxSamplingFactorH / 8);
+            let numUnitsVWithoutMcu =
+                Math.ceil(height * component.V / maxSamplingFactorV / 8);
 
             let units = new Array(numHorizontalUnitsInComponent * numVerticalUnitsInComponent)
             for (let j = 0; j < units.length; ++j) {
@@ -325,29 +318,33 @@ export class JpegDecoder {
 
             components[i] = {
                 /** コンポーネントID */
-                componentId: component.C,
+                id: component.C,
+
                 /** 水平方向のサンプリング数 */
-                horizontalSamplingFactor: component.H,
+                samplingFactorH: component.H,
                 /** 垂直方向のサンプリング数 */
-                verticalSamplingFactor: component.V,
+                samplingFactorV: component.V,
                 /** サンプリング数 */
                 samplingFactor: component.H * component.V,
+
                 /** MCU内でのユニット幅 */
                 widthUnitInMcu: widthUnitInMcu,
                 /** MCU内でのユニット高さ */
                 heightUnitInMcu: heightUnitInMcu,
                 /** MCU内でのユニットサイズ */
                 sizeUnitInMcu: widthUnitInMcu * heightUnitInMcu,
+
                 /** コンポーネント内の水平方向のユニット数 */
                 numHorizontalUnitsInComponent: numHorizontalUnitsInComponent,
-                /** コンポーネント内の垂直方向のユニット数 */
+                /** 垂直方向のユニット数 */
                 numVerticalUnitsInComponent: numVerticalUnitsInComponent,
-                /** コンポーネント内の水平方向の制約なしのユニット数、非インターリーブ用 */
-                numHorizontalUnitsInComponentWithoutMcu: numHorizontalUnitsInComponentWithoutMcu,
-                /** コンポーネント内のMCU制約なしの水平方向のユニット数、非インターリーブ用 */
-                numVerticalUnitsInComponentWithoutMcu: numVerticalUnitsInComponentWithoutMcu,
-                /** コンポーネント内のMCUの制約なしのユニット数、非インターリーブ用 */
-                numUnitsInComponentWithoutMcu: numHorizontalUnitsInComponentWithoutMcu * numVerticalUnitsInComponentWithoutMcu,
+
+                /** 水平方向の制約なしのユニット数、非インターリーブ用 */
+                numUnitsHWithoutMcu: numUnitsHWithoutMcu,
+                /** MCU制約なしの水平方向のユニット数、非インターリーブ用 */
+                numUnitsVWithoutMcu: numUnitsVWithoutMcu,
+                /** MCUの制約なしのユニット数、非インターリーブ用 */
+                numUnitsWithoutMcu: numUnitsHWithoutMcu * numUnitsVWithoutMcu,
                 /** 量子化テーブルのセレクター */
                 qtSelector: component.Tq,
                 /** ユニット配列 */
@@ -363,12 +360,12 @@ export class JpegDecoder {
             width: width,
             /** イメージの高さ */
             height: height,
-            /** 画像内の水平方向のMCU数 */
-            numHorizontalMcusInImage: numHorizontalMcusInImage,
-            /** 画像内の垂直方向のMCU数 */
-            numVerticalMcusInImage: numVerticalMcusInImage,
+            /** 水平方向のMCU数 */
+            numMcusH: numMcusH,
+            /** 垂直方向のMCU数 */
+            numMcusV: numMcusV,
             /** 画像内のMCU数 */
-            numMcusInImage: numHorizontalMcusInImage * numVerticalMcusInImage,
+            numMcus: numMcusH * numMcusV,
             /** コンポーネント配列 */
             components: components
         }
@@ -453,7 +450,7 @@ export class JpegDecoder {
 
         if (segment.Ns > 1) {
             // インターリーブの場合
-            for (let i = 0; i < this._frame.numMcusInImage; ++i) {
+            for (let i = 0; i < this._frame.numMcus; ++i) {
                 for (let j = 0; j < segment.Ns; ++j) {
                     let scanComponent = segment.components[j];
                     let frameComponent = this._frame.components[scanComponent.Cs - 1];
@@ -463,11 +460,11 @@ export class JpegDecoder {
 
                     for (let k = 0; k < frameComponent.samplingFactor; ++k) {
                         let index = frameComponent.numHorizontalUnitsInComponent *
-                            frameComponent.verticalSamplingFactor * Math.floor(i / this._frame.numHorizontalMcusInImage) +
-                            frameComponent.horizontalSamplingFactor * (i % this._frame.numHorizontalMcusInImage) +
+                            frameComponent.samplingFactorV * Math.floor(i / this._frame.numMcusH) +
+                            frameComponent.samplingFactorH * (i % this._frame.numMcusH) +
                             frameComponent.numHorizontalUnitsInComponent *
-                            Math.floor(k / frameComponent.horizontalSamplingFactor) +
-                            k % frameComponent.horizontalSamplingFactor;
+                            Math.floor(k / frameComponent.samplingFactorH) +
+                            k % frameComponent.samplingFactorH;
                         this._decodeUnitWithHuffmanCoding(
                             segment,
                             scanWork,
@@ -488,11 +485,11 @@ export class JpegDecoder {
 
             for (let i = 0;
                  i < frameComponent.numHorizontalUnitsInComponent *
-                 frameComponent.numVerticalUnitsInComponentWithoutMcu;
+                 frameComponent.numUnitsVWithoutMcu;
                  ++i) {
 
                 if (i % frameComponent.numHorizontalUnitsInComponent >
-                    frameComponent.numHorizontalUnitsInComponentWithoutMcu - 1) {
+                    frameComponent.numUnitsHWithoutMcu - 1) {
                     continue;
                 }
                 this._decodeUnitWithHuffmanCoding(
@@ -675,12 +672,12 @@ export class JpegDecoder {
         let width = this._frame.width;
         let height = this._frame.height;
 
-        let pixels = new Float32Array(width * height * 3);
-        let unit = new Float32Array(64);
+        let pixels = new Float64Array(width * height * 3);
+        let unit = new Float64Array(64);
 
         for (let i = 0; i < this._frame.components.length; ++i) {
             let component = this._frame.components[i];
-            if (component.componentId < 1 || component.componentId > 3) {
+            if (component.id < 1 || component.id > 3) {
                 continue;
             }
 
@@ -704,7 +701,7 @@ export class JpegDecoder {
 
                 // 再量子化
                 for (let k = 0; k < 64; ++k) {
-                    unit[k] *= quantizationTable[k];
+                    //unit[k] *= quantizationTable[k];
                 }
 
                 // 逆離散コサイン変換
@@ -726,7 +723,7 @@ export class JpegDecoder {
                             break;
                         }
 
-                        let index = 3 * (xk + yk) + (component.componentId - 1);
+                        let index = 3 * (xk + yk) + (component.id - 1);
                         pixels[index] = unit[m];
                     }
                 }
