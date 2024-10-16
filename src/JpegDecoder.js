@@ -694,8 +694,8 @@ export class JpegDecoder {
         let width = this._frame.width;
         let height = this._frame.height;
 
-        let pixels = new Float64Array(width * height * 3);
-        let unit = new Float64Array(64);
+        let pixels = new Float32Array(width * height * 3);
+        let unit = new Float32Array(64);
 
         for (let i = 0; i < this._frame.components.length; ++i) {
             let component = this._frame.components[i];
@@ -732,7 +732,7 @@ export class JpegDecoder {
                 // ユニットをキャンバスに書き込み
                 for (let k = 0; k < component.sizeUnitInMcu; ++k) {
                     let xj = k % component.widthUnitInMcu;
-                    let yj = width * Math.floor(k / component.heightUnitInMcu);
+                    let yj = width * Math.floor(k / component.widthUnitInMcu);
 
                     for (let m = 0; m < 64; ++m) {
                         let xk = xi + xj + component.widthUnitInMcu * (m % 8);
@@ -746,7 +746,7 @@ export class JpegDecoder {
                         }
 
                         let index = 3 * (xk + yk) + (component.id - 1);
-                        pixels[index] = unit[m];
+                        pixels[index] = Math.round(unit[m]);
                     }
                 }
             }
@@ -834,7 +834,7 @@ export class JpegDecoder {
                         output.push(Array.from(quantizationTable.slice(j, j + 8)));
                     }
 
-                    console.log(`Quantization table ${i} for ${table.T === 0 ? "DC" : "AC"}.`);
+                    console.log(`Quantization table ${table.T}.`);
                     console.table(output);
                 }
             }

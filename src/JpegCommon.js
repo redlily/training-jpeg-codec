@@ -1,8 +1,8 @@
 /**
  * RGBをYCbCrに変換する
- * @param {number[]|Float32Array} dst 出力先
+ * @param {number[]|Int16Array|Int32Array|Float32Array|Float64Array} dst 出力先
  * @param {number} dstOff 出力先の配列オフセット
- * @param {number[]|Float32Array} src 入力元
+ * @param {number[]|Int16Array|Int32Array|Float32Array|Float64Array} src 入力元
  * @param {number} srcOff 入力元の配列オフセット
  */
 export function rgbToYcbcr(dst, dstOff, src, srcOff) {
@@ -16,15 +16,15 @@ export function rgbToYcbcr(dst, dstOff, src, srcOff) {
 
 /**
  * YCbCrをRGBに変換する
- * @param {number[]|Float32Array|Float64Array} dst 出力先
+ * @param {number[]|Int16Array|Int32Array|Float32Array|Float64Array} dst 出力先
  * @param {number} dstOff 出力先の配列オフセット
- * @param {number[]|Float32Array|Float64Array} src 入力元
+ * @param {number[]|Int16Array|Int32Array|Float32Array|Float64Array} src 入力元
  * @param {number} srcOff 入力元の配列オフセット
  */
 export function ycbcrToRgb(dst, dstOff, src, srcOff) {
-    let y = Math.round(src[srcOff]) + 128;
-    let cb = Math.round(src[srcOff + 1]) + 128;
-    let cr = Math.round(src[srcOff + 2]) + 128;
+    let y = src[srcOff] + 128;
+    let cb = src[srcOff + 1] + 128;
+    let cr = src[srcOff + 2] + 128;
     dst[dstOff] = y + 1.402 * (cr - 128); // R
     dst[dstOff + 1] = y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128); // G
     dst[dstOff + 2] = y + 1.772 * (cb - 128); // B
