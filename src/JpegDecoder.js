@@ -444,7 +444,7 @@ export class JpegDecoder {
      */
     _decodeScanDataWithHuffmanCoding(segment) {
         let scanWork = {
-            numberOfEndOfBlock: 0,
+            numberOfEndOfBlocks: 0,
             prevDcCoefs: new Float32Array(segment.Ns)
         }
 
@@ -515,19 +515,29 @@ export class JpegDecoder {
         // ブロックの処理のスキップ
         if (segment.Ah === 0) {
             // シーケンシャル
-            if (scanWork.numberOfEndOfBlock > 0) {
-                scanWork.numberOfEndOfBlock--;
+            if (scanWork.numberOfEndOfBlocks > 0) {
+                scanWork.numberOfEndOfBlocks--;
                 return;
             }
         } else {
             // 逐次近似
-            if (scanWork.numberOfEndOfBlock > 0) {
-                for (let l = segment.Ss; l <= segment.Se; ++l) {
-                    if (unit[l] !== 0) {
-                        unit[l] |= this._stream.readBits(1) << segment.Al;
+            if (scanWork.numberOfEndOfBlocks > 0) {
+                // DC成分
+                if (segment.Ss === 0) {
+                    unit[0] |= this._stream.readBits(1) << segment.Al;
+                }
+
+                // AC成分
+                for (let i = Math.max(1, segment.Ss); i <= segment.Se; ++i) {
+                    if (unit[i] !== 0) {
+                        if (unit[i] > 0) {
+                            unit[i] |= this._stream.readBits(1) << segment.Al;
+                        } else {
+                            unit[i] -= this._stream.readBits(1) << segment.Al;
+                        }
                     }
                 }
-                scanWork.numberOfEndOfBlock--;
+                scanWork.numberOfEndOfBlocks--;
                 return;
             }
         }
@@ -543,8 +553,8 @@ export class JpegDecoder {
                     console.log(
                         `0, ` +
                         `huffmanCode=${("0000000000000000" + value.huffmanCode.toString(2)).slice(-value.numCodingBits - 1)}, ` +
-                        `runLength=${value.runLength}, ` +
-                        `additionalBits=${value.additionalBits}, ` +
+                        `RRRR=${value.RRRR}, ` +
+                        `SSSS=${value.SSSS}, ` +
                         `rawValue=${value.rawValue}, ` +
                         `value=${value.value}`);
                 }
@@ -561,15 +571,15 @@ export class JpegDecoder {
                 // シーケンシャルはたは逐次近似の最初の読み込み
                 let value = this._readValueWithHuffmanCode(acHuffmanTree);
                 let debugValue;
-                if (value.additionalBits === 0) {
-                    if (value.runLength < 0xf) {
+                if (value.SSSS === 0) {
+                    if (value.RRRR < 0xf) {
                         // EOB0 ～ EOB14 (End Of Block), DCTの係数を今回の係数も含め終端まで係数を0で埋める
-                        let runLength = (1 << value.runLength) + this._stream.readBits(value.runLength);
-                        scanWork.numberOfEndOfBlock = runLength - 1;
+                        let runLength = (1 << value.RRRR) + this._stream.readBits(value.RRRR);
+                        scanWork.numberOfEndOfBlocks = runLength - 1;
                         while (i <= segment.Se) {
                             unit[i++] = 0;
                         }
-                        value = `EOB${value.runLength}`;
+                        value = `EOB${value.RRRR}`;
                     } else {
                         // ZRL (Zero Run Length), DCTの係数を16個を0で埋め、今回の要素も0として、計16要素を0で埋める
                         for (let j = 0; j < 15 && i <= segment.Se; ++j) {
@@ -580,7 +590,7 @@ export class JpegDecoder {
                     }
                 } else {
                     // COMPOSITE VALUES, DCTの係数にランレングスの指定の数だけ0で埋め、その後に取り出した値を係数として代入
-                    for (let j = 0; j < value.runLength && i <= segment.Se; ++j) {
+                    for (let j = 0; j < value.RRRR && i <= segment.Se; ++j) {
                         unit[i++] = 0;
                     }
                     unit[i] = value.value << segment.Al;
@@ -592,8 +602,8 @@ export class JpegDecoder {
                         `${i}, ` +
                         `huffmanCode=${("0000000000000000" + value.huffmanCode.toString(2))
                             .slice(-value.numCodingBits - 1)}, ` +
-                        `runLength=${value.runLength}, ` +
-                        `additionalBits=${value.additionalBits}, ` +
+                        `RRRR=${value.RRRR}, ` +
+                        `SSSS=${value.SSSS}, ` +
                         `rawValue=${value.rawValue}, ` +
                         `value=${debugValue}`);
                 }
@@ -601,14 +611,18 @@ export class JpegDecoder {
                 // 逐次近似
                 // スタート以降は1ビットずつの読み込み
                 let value = this._readValueWithHuffmanCode(acHuffmanTree);
-                if (value.additionalBits === 0) {
-                    if (value.runLength < 0xf) {
+                if (value.SSSS === 0) {
+                    if (value.RRRR < 0xf) {
                         // EOB0 ～ EOB14 (End Of Block), DCTの係数を今回の係数も含め終端まで係数を0で埋める
-                        let runLength = (1 << value.runLength) + this._stream.readBits(value.runLength);
-                        scanWork.numberOfEndOfBlock = runLength - 1;
+                        let runLength = (1 << value.RRRR) + this._stream.readBits(value.RRRR);
+                        scanWork.numberOfEndOfBlocks = runLength - 1;
                         while (i <= segment.Se) {
                             if (unit[i] !== 0) {
-                                unit[i] |= this._stream.readBits(1) << segment.Al;
+                                if (unit[i] > 0) {
+                                    unit[i] |= this._stream.readBits(1) << segment.Al;
+                                } else {
+                                    unit[i] -= this._stream.readBits(1) << segment.Al;
+                                }
                             }
                             i++;
                         }
@@ -617,7 +631,11 @@ export class JpegDecoder {
                         // ZRL (Zero Run Length), DCTの係数を16個を0で埋め、今回の要素も0として、計16要素を0で埋める
                         for (let j = 0; j < 15 && i <= segment.Se;) {
                             if (unit[i] !== 0) {
-                                unit[i] |= this._stream.readBits(1) << segment.Al;
+                                if (unit[i] > 0) {
+                                    unit[i] |= this._stream.readBits(1) << segment.Al;
+                                } else {
+                                    unit[i] -= this._stream.readBits(1) << segment.Al;
+                                }
                             } else {
                                 j++;
                             }
@@ -625,15 +643,19 @@ export class JpegDecoder {
                         }
                         while (i <= segment.Se) {
                             if (unit[i] !== 0) {
-                                unit[i] |= this._stream.readBits(1) << segment.Al;
+                                if (unit[i] > 0) {
+                                    unit[i] |= this._stream.readBits(1) << segment.Al;
+                                } else {
+                                    unit[i] -= this._stream.readBits(1) << segment.Al;
+                                }
                             } else {
                                 break;
                             }
                             i++;
                         }
                     }
-                } else if (value.additionalBits === 1) {
-                    for (let j = 0; j < value.runLength && i <= segment.Se;) {
+                } else if (value.SSSS === 1) {
+                    for (let j = 0; j < value.RRRR && i <= segment.Se;) {
                         if (unit[i] !== 0) {
                             if (unit[i] > 0) {
                                 unit[i] |= this._stream.readBits(1) << segment.Al;
@@ -701,7 +723,7 @@ export class JpegDecoder {
 
                 // 再量子化
                 for (let k = 0; k < 64; ++k) {
-                    //unit[k] *= quantizationTable[k];
+                    unit[k] *= quantizationTable[k];
                 }
 
                 // 逆離散コサイン変換
@@ -902,25 +924,25 @@ export class JpegDecoder {
                     // DC成分用
                     values[k] = {
                         huffmanCode: code,
-                        runLength: 0,
-                        additionalBits: value,
+                        RRRR: 0,
+                        SSSS: value,
                     };
                     if (isDebugging) {
                         debugTable.push({
                             "bits": j + 1,
                             "code": ("0000000000000000" + code.toString(2)).slice(-j - 1),
-                            "additionalBits": values[k].additionalBits
+                            "SSSS": values[k].SSSS
                         });
                     }
                 } else if (table.Tc === 1) {
                     // AC成分用
                     values[k] = {
                         huffmanCode: code,
-                        runLength: 0xf & (value >> 4),
-                        additionalBits: 0xf & value,
+                        RRRR: 0xf & (value >> 4),
+                        SSSS: 0xf & value,
                     };
                     if (isDebugging) {
-                        if (values[k].additionalBits === 0) {
+                        if (values[k].SSSS === 0) {
                             let strValue;
                             if (value === 0x00) {
                                 strValue = "EOB or EOB0";
@@ -932,16 +954,16 @@ export class JpegDecoder {
                             debugTable.push({
                                 "bits": j + 1,
                                 "code": ("0000000000000000" + code.toString(2)).slice(-j - 1),
-                                "runLength": values[k].runLength,
-                                "additionalBits": values[k].additionalBits,
+                                "RRRR": values[k].RRRR,
+                                "SSSS": values[k].SSSS,
                                 "specialValue": strValue
                             });
                         } else {
                             debugTable.push({
                                 "bits": j + 1,
                                 "code": ("0000000000000000" + code.toString(2)).slice(-j - 1),
-                                "runLength": values[k].runLength,
-                                "additionalBits": values[k].additionalBits
+                                "RRRR": values[k].RRRR,
+                                "SSSS": values[k].SSSS
                             });
                         }
                     }
@@ -987,12 +1009,12 @@ export class JpegDecoder {
         // 値を読み込む
         let rawValue = 0;
         let value = 0;
-        if (element.additionalBits > 0) {
-            rawValue = this._stream.readBits(element.additionalBits);
+        if (element.SSSS > 0) {
+            rawValue = this._stream.readBits(element.SSSS);
 
             // マグニチュードカテゴリによるデコード
-            value = rawValue < (1 << (element.additionalBits - 1)) ?
-                ((-1 << element.additionalBits) | rawValue) + 1 : rawValue;
+            value = rawValue < (1 << (element.SSSS - 1)) ?
+                ((-1 << element.SSSS) | rawValue) + 1 : rawValue;
         }
 
         return {
@@ -1001,9 +1023,9 @@ export class JpegDecoder {
             /** ハフマンコードのビット数 */
             numCodingBits: rowIndex + 1,
             /** ランレングス */
-            runLength: element.runLength,
+            RRRR: element.RRRR,
             /** 追加読み込みビット数 */
-            additionalBits: element.additionalBits,
+            SSSS: element.SSSS,
             /** 未加工の値 */
             rawValue: rawValue,
             /** デコードされた数値 */
