@@ -300,18 +300,18 @@ export class JpegDecoder {
         for (let i = 0; i < components.length; ++i) {
             let component = segment.components[i];
 
-            let widthUnitInMcu = maxSamplingFactorH / component.H;
-            let heightUnitInMcu = maxSamplingFactorV / component.V;
+            let numUnitHInMcu = maxSamplingFactorH / component.H;
+            let numUnitVInMcu = maxSamplingFactorV / component.V;
 
-            let numHorizontalUnitsInComponent = numMcusH * component.H;
-            let numVerticalUnitsInComponent = numMcusV * component.V;
+            let numUnitH = numMcusH * component.H;
+            let numUnitV = numMcusV * component.V;
 
             let numUnitsHWithoutMcu =
                 Math.ceil(width * component.H / maxSamplingFactorH / 8);
             let numUnitsVWithoutMcu =
                 Math.ceil(height * component.V / maxSamplingFactorV / 8);
 
-            let units = new Array(numHorizontalUnitsInComponent * numVerticalUnitsInComponent)
+            let units = new Array(numUnitH * numUnitV)
             for (let j = 0; j < units.length; ++j) {
                 units[j] = new Int16Array(64);
             }
@@ -319,36 +319,32 @@ export class JpegDecoder {
             components[i] = {
                 /** コンポーネントID */
                 id: component.C,
-
                 /** 水平方向のサンプリング数 */
                 samplingFactorH: component.H,
                 /** 垂直方向のサンプリング数 */
                 samplingFactorV: component.V,
                 /** サンプリング数 */
                 samplingFactor: component.H * component.V,
-
-                /** MCU内でのユニット幅 */
-                widthUnitInMcu: widthUnitInMcu,
-                /** MCU内でのユニット高さ */
-                heightUnitInMcu: heightUnitInMcu,
-                /** MCU内でのユニットサイズ */
-                sizeUnitInMcu: widthUnitInMcu * heightUnitInMcu,
-
-                /** コンポーネント内の水平方向のユニット数 */
-                numHorizontalUnitsInComponent: numHorizontalUnitsInComponent,
+                /** MCU内での水平方向のユニット数 */
+                numUnitHInMcu: numUnitHInMcu,
+                /** MCU内での垂直方向ユニット数 */
+                numUnitVInMcu: numUnitVInMcu,
+                /** MCU内でのユニット数 */
+                numUnitsInMcu: numUnitHInMcu * numUnitVInMcu,
+                /** 水平方向のユニット数 */
+                numUnitH: numUnitH,
                 /** 垂直方向のユニット数 */
-                numVerticalUnitsInComponent: numVerticalUnitsInComponent,
-
-                /** 水平方向の制約なしのユニット数、非インターリーブ用 */
+                numUnitV: numUnitV,
+                /** MCUの制約なしの水平方向のユニット数、非インターリーブ用 */
                 numUnitsHWithoutMcu: numUnitsHWithoutMcu,
-                /** MCU制約なしの水平方向のユニット数、非インターリーブ用 */
+                /** MCUの制約なしの垂直方向のユニット数、非インターリーブ用 */
                 numUnitsVWithoutMcu: numUnitsVWithoutMcu,
                 /** MCUの制約なしのユニット数、非インターリーブ用 */
                 numUnitsWithoutMcu: numUnitsHWithoutMcu * numUnitsVWithoutMcu,
-                /** 量子化テーブルのセレクター */
-                qtSelector: component.Tq,
                 /** ユニット配列 */
-                units: units
+                units: units,
+                /** 量子化テーブルのセレクター */
+                qtSelector: component.Tq
             };
         }
 
@@ -459,10 +455,10 @@ export class JpegDecoder {
                     let acHuffmanTable = this._huffmanTables[1][scanComponent.Ta];
 
                     for (let k = 0; k < frameComponent.samplingFactor; ++k) {
-                        let index = frameComponent.numHorizontalUnitsInComponent *
+                        let index = frameComponent.numUnitH *
                             frameComponent.samplingFactorV * Math.floor(i / this._frame.numMcusH) +
                             frameComponent.samplingFactorH * (i % this._frame.numMcusH) +
-                            frameComponent.numHorizontalUnitsInComponent *
+                            frameComponent.numUnitH *
                             Math.floor(k / frameComponent.samplingFactorH) +
                             k % frameComponent.samplingFactorH;
                         this._decodeUnitWithHuffmanCoding(
@@ -484,11 +480,11 @@ export class JpegDecoder {
             let acHuffmanTree = this._huffmanTables[1][scanComponent.Ta];
 
             for (let i = 0;
-                 i < frameComponent.numHorizontalUnitsInComponent *
+                 i < frameComponent.numUnitH *
                  frameComponent.numUnitsVWithoutMcu;
                  ++i) {
 
-                if (i % frameComponent.numHorizontalUnitsInComponent >
+                if (i % frameComponent.numUnitH >
                     frameComponent.numUnitsHWithoutMcu - 1) {
                     continue;
                 }
@@ -703,13 +699,15 @@ export class JpegDecoder {
                 continue;
             }
 
+            let pixel = new Int16Array(component.numUnitH)
+
             let quantizationTable = this._quantizationTables[component.qtSelector];
 
             for (let j = 0; j < component.units.length; ++j) {
-                let xi = 8 * component.widthUnitInMcu *
-                    (j % component.numHorizontalUnitsInComponent);
-                let yi = width * 8 * component.heightUnitInMcu *
-                    Math.floor(j / component.numHorizontalUnitsInComponent);
+                let xi = 8 * component.numUnitHInMcu *
+                    (j % component.numUnitH);
+                let yi = width * 8 * component.numUnitVInMcu *
+                    Math.floor(j / component.numUnitH);
 
                 // 境界面処理
                 if (xi >= width) {
@@ -730,13 +728,13 @@ export class JpegDecoder {
                 idct(8, unit);
 
                 // ユニットをキャンバスに書き込み
-                for (let k = 0; k < component.sizeUnitInMcu; ++k) {
-                    let xj = k % component.widthUnitInMcu;
-                    let yj = width * Math.floor(k / component.widthUnitInMcu);
+                for (let k = 0; k < component.numUnitsInMcu; ++k) {
+                    let xj = k % component.numUnitHInMcu;
+                    let yj = width * Math.floor(k / component.numUnitHInMcu);
 
                     for (let m = 0; m < 64; ++m) {
-                        let xk = xi + xj + component.widthUnitInMcu * (m % 8);
-                        let yk = yi + yj + width * component.heightUnitInMcu * Math.floor(m / 8);
+                        let xk = xi + xj + component.numUnitHInMcu * (m % 8);
+                        let yk = yi + yj + width * component.numUnitVInMcu * Math.floor(m / 8);
 
                         // 境界面処理
                         if (xk >= width) {
