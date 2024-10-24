@@ -172,49 +172,6 @@ onload = () => {
     img.src = "./assets/work/unit_image.png";
 }
 
-let aaa = [
-    9, 6, 5, 9, 13, 22, 28, 33,
-    6, 6, 8, 10, 14, 31, 32, 30,
-    8, 7, 9, 13, 22, 31, 37, 30,
-    8, 9, 12, 16, 28, 47, 43, 33,
-    10, 12, 20, 30, 37, 59, 56, 42,
-    13, 19, 30, 35, 44, 56, 61, 50,
-    26, 35, 42, 47, 56, 65, 65, 55,
-    39, 50, 51, 53, 60, 54, 56, 53
-];
-
-let bbb = [
-    9, 6, 5, 9, 13, 22, 28, 33,
-    6, 6, 8, 10, 14, 31, 32, 30,
-    8, 7, 9, 13, 22, 31, 37, 30,
-    8, 9, 12, 16, 28, 47, 43, 33,
-    10, 12, 20, 30, 37, 59, 56, 42,
-    13, 19, 30, 35, 44, 56, 61, 50,
-    26, 35, 42, 47, 56, 65, 65, 55,
-    39, 50, 51, 53, 60, 54, 56, 53
-];
-let ccc = new Float32Array(64);
-
-idct(8, aaa);
-idct2D(8, bbb, ccc);
-
-console.log(aaa);
-console.log(ccc);
-
-let eee = new Array(64);
-for (let i = 0; i < 64; ++i) {
-    eee[i] = Math.abs(aaa[i]) / Math.abs(ccc[i]);
-}
-console.log(eee);
-
-// let ddd = new Array(64);
-
-// idct2D(8, ccc, ddd);
-// idct(8, aaa);
-
-// console.log(aaa);
-// console.log(ddd);
-
 function onUploadImage(event) {
     let files = event.target.files;
     if (files.length !== 1) {
@@ -238,9 +195,9 @@ function onUploadImage(event) {
                 let context = canvas.getContext("2d");
                 let imageData = context.createImageData(out.width, out.height);
                 for (let i = 0; i < out.width * out.height; ++i) {
-                    imageData.data[4 * i] = Math.round(out.pixels[3 * i]);
-                    imageData.data[4 * i + 1] = Math.round(out.pixels[3 * i + 1]);
-                    imageData.data[4 * i + 2] = Math.round(out.pixels[3 * i + 2]);
+                    imageData.data[4 * i] = out.pixels[3 * i];
+                    imageData.data[4 * i + 1] = out.pixels[3 * i + 1];
+                    imageData.data[4 * i + 2] = out.pixels[3 * i + 2];
                     imageData.data[4 * i + 3] = 255;
                 }
                 context.putImageData(imageData, 0, 0);

@@ -1,8 +1,8 @@
 /**
  * RGBをYCbCrに変換する
- * @param {number[]|Int16Array|Int32Array|Float32Array|Float64Array} dst 出力先
+ * @param {number[]|Uint8ClampedArray|Uint8Array|Int16Array|Int32Array|Float32Array|Float64Array} dst 出力先
  * @param {number} dstOff 出力先の配列オフセット
- * @param {number[]|Int16Array|Int32Array|Float32Array|Float64Array} src 入力元
+ * @param {number[]|Uint8ClampedArray|Uint8Array|Int16Array|Int32Array|Float32Array|Float64Array} src 入力元
  * @param {number} srcOff 入力元の配列オフセット
  */
 export function rgbToYcbcr(dst, dstOff, src, srcOff) {
@@ -16,17 +16,17 @@ export function rgbToYcbcr(dst, dstOff, src, srcOff) {
 
 /**
  * YCbCrをRGBに変換する
- * @param {number[]|Int16Array|Int32Array|Float32Array|Float64Array} dst 出力先
+ * @param {number[]|Uint8ClampedArray|Uint8Array|Int16Array|Int32Array|Float32Array|Float64Array} dst 出力先
  * @param {number} dstOff 出力先の配列オフセット
- * @param {number[]|Int16Array|Int32Array|Float32Array|Float64Array} src 入力元
+ * @param {number[]|Uint8ClampedArray|Uint8Array|Int16Array|Int32Array|Float32Array|Float64Array} src 入力元
  * @param {number} srcOff 入力元の配列オフセット
  */
 export function ycbcrToRgb(dst, dstOff, src, srcOff) {
-    let y = src[srcOff] + 128;
-    let cb = src[srcOff + 1] + 128;
-    let cr = src[srcOff + 2] + 128;
+    let y = src[srcOff];
+    let cb = src[srcOff + 1];
+    let cr = src[srcOff + 2];
     dst[dstOff] = y + 1.402 * (cr - 128); // R
-    dst[dstOff + 1] = y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128); // G
+    dst[dstOff + 1] = y - 0.3441 * (cb - 128) - 0.7141 * (cr - 128); // G
     dst[dstOff + 2] = y + 1.772 * (cb - 128); // B
 }
 
@@ -64,4 +64,15 @@ export function reorderZigzagSequence(dst, src) {
     for (let i = 0; i < 64; ++i) {
         dst[i] = src[zigzagSequenceIndices[i]];
     }
+}
+
+/**
+ * 3つの値から中央値を返す
+ * @param {number} a 数値1
+ * @param {number} b 数値2
+ * @param {number} c 数値3
+ * @returns {number} 中央値
+ */
+export function middle(a, b, c) {
+    return (a < b) ? (a < c ? (b < c ? b : c) : a) : (b < c ? (a < c ? a : c) : b);
 }
